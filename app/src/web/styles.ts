@@ -57,7 +57,8 @@ input, textarea { font: inherit; color: inherit; }
 .iv-resizer:hover, .iv-resizer.drag { background: rgba(91,156,245,.35); }
 
 .iv-side-tools { display: flex; align-items: center; gap: 6px; margin: 0 12px 6px; min-width: 0; }
-.iv-side-tools .iv-pop-wrap { min-width: 0; flex: 0 1 auto; }
+.iv-side-tools .iv-pop-wrap { flex: none; }
+.iv-side-tools .iv-pop-wrap:first-child { flex: 1 1 0; min-width: 0; } .iv-side-tools .iv-pop-wrap:first-child .iv-chip { width: 100%; justify-content: space-between; }
 .iv-side-tools .iv-chip { max-width: 100%; min-width: 0; font-size: 12.5px; padding: 5px 8px; }
 .iv-side-tools .iv-chip.grow { flex: none; margin-left: auto; font-variant-numeric: tabular-nums; }
 .iv-bulk { display: flex; align-items: center; gap: 4px; margin: 0 12px 6px; padding: 5px 8px; border-radius: 10px; background: var(--panel2); font-size: 12.5px; animation: iv-pop .16s cubic-bezier(.2,.9,.3,1.15); }
