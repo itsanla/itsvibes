@@ -1,7 +1,6 @@
 import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ChatItem } from '../../../shared/protocol'
 import { useClient } from '../lib/client'
-import { STATUS, shortPath } from '../lib/format'
 import { groupItems } from '../lib/group'
 import Composer from './Composer'
 import Markdown from './Markdown'
@@ -11,12 +10,6 @@ import { I, copyText, setUI, useUI } from './ui'
 import { useAttach, useDrop } from './useAttach'
 
 const EMPTY: ChatItem[] = []
-
-// folder panjang dipotong dari kiri supaya nama folder terakhir tetap terlihat
-const folderLabel = (cwd: string) => {
-  const p = shortPath(cwd)
-  return p.length > 34 ? `…${p.slice(-33)}` : p
-}
 
 function Message({ item }: { item: ChatItem }) {
   const [done, setDone] = useState(false)
@@ -61,12 +54,6 @@ function Message({ item }: { item: ChatItem }) {
   }
 }
 
-const statusPill = (status: string) => {
-  const st = STATUS[status as keyof typeof STATUS]
-  const cls = status === 'idle' ? 'ok' : status === 'waiting' ? 'warn' : status === 'running' || status === 'starting' ? 'run' : status === 'terminal' ? 'blue' : ''
-  return { label: st?.label || 'Tidak berjalan', cls }
-}
-
 export default function SessionView({ id }: { id: string }) {
   const c = useClient()
   const ui = useUI()
@@ -85,7 +72,6 @@ export default function SessionView({ id }: { id: string }) {
   const busy = status === 'running' || status === 'starting' || status === 'waiting'
   const items = chat?.items ?? EMPTY
   const { nodes, results } = useMemo(() => groupItems(items), [items])
-  const pill = statusPill(status)
 
   // pasang langganan sesi ini; dipanggil ulang kalau pindah sesi (komponen diberi key=id)
   useLayoutEffect(() => {
@@ -139,12 +125,7 @@ export default function SessionView({ id }: { id: string }) {
   return (
     <>
       <div className="iv-col" {...bind}>
-        <header className="iv-head">
-          {!ui.sidebarOpen ? <button className="iv-icon-btn" onClick={() => setUI({ sidebarOpen: true })} title="Tampilkan sidebar (Ctrl+B)"><I n="sidebar" /></button> : null}
-          <div className="iv-head-title" title={summary?.title}>{summary?.title ?? 'Sesi'}</div>
-          <span className={`iv-pill ${pill.cls}`}>{pill.label}</span>
-          {summary?.cwd ? <span className="iv-pill shrink" title={summary.cwd}><I n="folder" s={13} /> <span>{folderLabel(summary.cwd)}</span></span> : null}
-        </header>
+        {!ui.sidebarOpen ? <button className="iv-icon-btn iv-side-show" onClick={() => setUI({ sidebarOpen: true })} title="Tampilkan sidebar (Ctrl+B)"><I n="sidebar" /></button> : null}
 
         {status === 'terminal' ? <div className="iv-banner">Sesi ini sedang terbuka di terminal Bima. Tutup di sana dulu untuk melanjutkannya dari sini.</div> : null}
 

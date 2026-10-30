@@ -73,6 +73,7 @@ input, textarea { font: inherit; color: inherit; }
 .iv-head { display: flex; align-items: center; gap: 10px; height: 52px; padding: 0 16px; border-bottom: 1px solid var(--border); flex: none; }
 .iv-head-title { font-weight: 700; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 90px; flex: 0 1 auto; }
 .iv-spacer { flex: 1; }
+.iv-side-show { position: absolute; top: 10px; left: 10px; z-index: 5; background: var(--card); border: 1px solid var(--border); }
 .iv-pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; background: var(--panel2); color: var(--dim); font-size: 12px; font-weight: 600; flex: none; white-space: nowrap; }
 .iv-pill.shrink { flex: 0 1 auto; min-width: 0; max-width: 300px; } .iv-pill.shrink > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .iv-pill.ok { color: var(--ok); } .iv-pill.warn { color: var(--warn); } .iv-pill.run { color: var(--accent); } .iv-pill.blue { color: var(--link); }
