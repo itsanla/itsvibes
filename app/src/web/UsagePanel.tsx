@@ -19,18 +19,6 @@ function resetIn(iso: string | null) {
   return `Diatur ulang dalam ${h ? `${h} jam ` : ''}${m} mnt`
 }
 
-export function Ring({ percent, size = 18 }: { percent: number | null; size?: number }) {
-  const r = size / 2 - 2.5
-  const circ = 2 * Math.PI * r
-  const p = Math.max(0, Math.min(100, percent ?? 0))
-  return (
-    <svg className="iv-ring" width={size} height={size} aria-hidden>
-      <circle cx={size / 2} cy={size / 2} r={r} stroke="#3a3a3a" strokeWidth={3} fill="none" />
-      {percent !== null ? <circle cx={size / 2} cy={size / 2} r={r} stroke="var(--accent)" strokeWidth={3} fill="none" strokeLinecap="round" strokeDasharray={`${(circ * p) / 100} ${circ}`} /> : null}
-    </svg>
-  )
-}
-
 function Plan({ w }: { w: PlanWindow }) {
   const pct = w.utilization ?? 0
   return (

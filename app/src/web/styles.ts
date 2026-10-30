@@ -214,7 +214,6 @@ input, textarea { font: inherit; color: inherit; }
 .iv-card small { display: block; color: var(--dim); margin-top: 8px; font-size: 12.5px; }
 .iv-cat { display: flex; align-items: center; gap: 8px; padding: 3px 0; font-size: 13px; } .iv-cat .n { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .iv-cat .v { color: var(--dim); width: 56px; text-align: right; } .iv-cat .p { color: var(--dim); width: 48px; text-align: right; }
 .iv-cat i { width: 10px; height: 10px; border-radius: 50%; flex: none; }
-.iv-ring { transform: rotate(-90deg); }
 
 /* ---------- selamat datang / pairing ---------- */
 .iv-welcome { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px; min-height: 0; overflow-y: auto; }

@@ -1,6 +1,5 @@
 import { useClient } from '../lib/client'
 import { MODES, liveLine } from '../lib/format'
-import { Ring } from './UsagePanel'
 import { I, Popover, copyText, setUI } from './ui'
 
 // Kendali sesi di sidebar, di bawah pencarian: mode izin, angka penggunaan, dan menu lainnya
@@ -9,7 +8,6 @@ export default function SessionTools({ id }: { id?: string }) {
   const run = id ? c.runs.get(id) : undefined
   const mode = MODES.find(m => m.mode === run?.mode)
   const active = !!run && run.status !== 'closed'
-  const context = id ? c.usage.get(id)?.context : null
   return (
     <div className="iv-side-tools">
       {id ? (
@@ -33,7 +31,6 @@ export default function SessionTools({ id }: { id?: string }) {
         </Popover>
       ) : null}
       <button className="iv-chip grow" onClick={() => setUI({ panelOpen: true })} title="Kuota 5 jam, kuota mingguan, token konteks (Ctrl+\)">
-        <Ring percent={context?.percentage ?? null} />
         <span>{liveLine(c.plan, id ? c.tokens.get(id) : undefined) || 'Penggunaan'}</span>
       </button>
       {id ? (
