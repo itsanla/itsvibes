@@ -5,6 +5,7 @@ import { CSS } from './styles'
 import SettingsDialog from './SettingsDialog'
 import ShortcutsDialog from './ShortcutsDialog'
 import Sidebar, { newSession } from './Sidebar'
+import UsagePanel from './UsagePanel'
 import { getUI, setUI, useUI } from './ui'
 
 const typing = (t: EventTarget | null) => {
@@ -79,6 +80,7 @@ export default function Shell({ children }: { children: ReactNode }) {
           </main>
         </div>
       )}
+      {ui.panelOpen ? <UsagePanel id={activeId} /> : null}
       {ui.settings ? <SettingsDialog /> : null}
       {ui.shortcuts ? <ShortcutsDialog /> : null}
       {toast ? <div className="iv-toast" role="status">{toast}</div> : null}

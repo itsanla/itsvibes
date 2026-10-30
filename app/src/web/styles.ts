@@ -56,6 +56,16 @@ input, textarea { font: inherit; color: inherit; }
 .iv-resizer { position: absolute; top: 0; right: -3px; width: 6px; height: 100%; cursor: col-resize; z-index: 5; }
 .iv-resizer:hover, .iv-resizer.drag { background: rgba(91,156,245,.35); }
 
+.iv-side-tools { display: flex; align-items: center; gap: 6px; margin: 0 12px 6px; min-width: 0; }
+.iv-side-tools .iv-pop-wrap { min-width: 0; flex: 0 1 auto; }
+.iv-side-tools .iv-chip { max-width: 100%; min-width: 0; font-size: 12.5px; padding: 5px 8px; }
+.iv-side-tools .iv-chip.grow { flex: none; margin-left: auto; font-variant-numeric: tabular-nums; }
+.iv-bulk { display: flex; align-items: center; gap: 4px; margin: 0 12px 6px; padding: 5px 8px; border-radius: 10px; background: var(--panel2); font-size: 12.5px; animation: iv-pop .16s cubic-bezier(.2,.9,.3,1.15); }
+.iv-bulk span { flex: 1; color: var(--dim); white-space: nowrap; } .iv-bulk button { padding: 3px 7px; border-radius: 7px; font-weight: 600; white-space: nowrap; } .iv-bulk button:hover { background: var(--hover); }
+.iv-bulk .del { color: var(--err); } .iv-bulk .del:disabled { opacity: .4; }
+.iv-check { width: 18px; height: 18px; flex: none; border-radius: 5px; border: 1.5px solid var(--faint); display: inline-flex; align-items: center; justify-content: center; }
+.iv-check.on { background: var(--accent); border-color: var(--accent); }
+
 /* ---------- main ---------- */
 .iv-main { flex: 1; display: flex; min-width: 0; min-height: 0; position: relative; }
 .iv-col { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; position: relative; }
@@ -159,6 +169,14 @@ input, textarea { font: inherit; color: inherit; }
 .iv-dropmask { position: absolute; inset: 0; background: #1a1a1acc; border: 2px dashed var(--blue); border-radius: 14px; margin: 8px; display: flex; align-items: center; justify-content: center; font-size: 16px; font-weight: 700; color: var(--link); z-index: 20; pointer-events: none; }
 
 /* ---------- popover & dialog ---------- */
+@keyframes iv-fade { from { opacity: 0; } }
+@keyframes iv-pop { from { opacity: 0; transform: scale(.94) translateY(6px); } }
+@keyframes iv-toast { from { opacity: 0; transform: translate(-50%, 10px) scale(.96); } }
+.iv-scrim { animation: iv-fade .16s ease-out; }
+.iv-dialog { animation: iv-pop .22s cubic-bezier(.2,.9,.3,1.15); }
+.iv-pop { animation: iv-pop .16s cubic-bezier(.2,.9,.3,1.15); }
+.iv-toast { animation: iv-toast .2s cubic-bezier(.2,.9,.3,1.15); }
+@media (prefers-reduced-motion: reduce) { .iv-scrim, .iv-dialog, .iv-pop, .iv-toast, .iv-bulk { animation: none; } }
 .iv-pop-wrap { position: relative; display: inline-flex; }
 .iv-pop { position: absolute; z-index: 30; min-width: 300px; max-width: 380px; background: var(--card); border: 1px solid #3d3d3d; border-radius: 14px; padding: 6px; box-shadow: 0 14px 44px #000a; max-height: 70vh; overflow-y: auto; }
 .iv-pop.up { bottom: calc(100% + 8px); left: 0; } .iv-pop.down { top: calc(100% + 8px); left: 0; } .iv-pop.down.right { left: auto; right: 0; }
@@ -186,9 +204,8 @@ input, textarea { font: inherit; color: inherit; }
 .iv-table { width: 100%; border-collapse: collapse; } .iv-table td { padding: 5px 0; } .iv-table td:first-child { color: var(--dim); width: 150px; }
 .iv-key { font: 600 11px var(--mono); background: var(--bg); border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 6px; padding: 1px 6px; color: var(--text); margin-right: 3px; }
 
-/* ---------- panel kanan ---------- */
+/* ---------- penggunaan ---------- */
 .iv-panel { width: 340px; flex: none; border-left: 1px solid var(--border); background: var(--panel); overflow-y: auto; min-height: 0; padding: 14px 16px 24px; }
-.iv-panel h4 { margin: 0 0 10px; font-size: 14px; display: flex; align-items: center; }
 .iv-meter { height: 9px; border-radius: 5px; background: #3a3a3a; display: flex; overflow: hidden; }
 .iv-meter.plan { background: #0f2747; } .iv-meter.plan i { background: var(--blue); }
 .iv-card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 12px 14px; margin-bottom: 12px; }

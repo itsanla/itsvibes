@@ -314,6 +314,20 @@ class Client {
       case 'tokens':
         this.tokens.set(m.sessionId, m.total)
         break
+      case 'sessionsDeleted': {
+        const gone = new Set(m.deleted)
+        this.sessions = this.sessions.filter(x => !gone.has(x.id))
+        for (const id of m.deleted) {
+          this.chats.delete(id)
+          this.runs.delete(id)
+          this.usage.delete(id)
+          this.tokens.delete(id)
+          this.open.delete(id)
+        }
+        const why = [...new Set(m.skipped.map(x => x.reason))].join(', ')
+        this.showToast(`${m.deleted.length} sesi dihapus${m.skipped.length ? `, ${m.skipped.length} dilewati (${why})` : ''}`)
+        break
+      }
       case 'status': {
         const prev = this.runs.get(m.sessionId)
         this.runs.set(m.sessionId, { status: m.status, mode: m.mode, pending: m.pending, model: m.model, effort: m.effort })
@@ -465,6 +479,10 @@ class Client {
 
   setSource(source: SourceId) {
     if (!this.raw({ t: 'setSource', source })) this.showToast('Belum tersambung ke Bima')
+  }
+
+  deleteSessions(ids: string[]) {
+    if (!this.raw({ t: 'deleteSessions', ids })) this.showToast('Belum tersambung ke Bima')
   }
 
   setCompactWindow(tokens: number) {

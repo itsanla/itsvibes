@@ -330,6 +330,12 @@ async function onMessage(c: Conn, m: ClientMessage) {
       return hub.setSource(m.source)
     case 'setCompactWindow':
       return hub.setCompactWindow(m.tokens)
+    case 'deleteSessions': {
+      if (!Array.isArray(m.ids)) return
+      const res = await hub.deleteSessions(m.ids.map(String))
+      for (const x of conns) if (x.role === 'app') sendTo(x, { t: 'sessionsDeleted', ...res })
+      return
+    }
     case 'answer':
       if (!hub.answer(m.answer)) sendTo(c, { t: 'error', message: 'Permintaan itu sudah tidak menunggu jawaban' })
       return

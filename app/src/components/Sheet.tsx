@@ -67,7 +67,7 @@ export default function Sheet({ visible, onClose, title, onBack, right, children
       <Animated.View style={[StyleSheet.absoluteFill, s.backdrop, { opacity: fade }]}>
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
       </Animated.View>
-      <Animated.View style={[s.sheet, Platform.OS === 'web' && s.sheetWeb, { maxHeight: height - insets.top - 24, transform: [{ translateY: y }] }]}>
+      <Animated.View style={[s.sheet, Platform.OS === 'web' && s.sheetWeb, { maxHeight: height - insets.top - 24, transform: [{ translateY: y }, { scale: y.interpolate({ inputRange: [0, height], outputRange: [1, 0.9], extrapolate: 'clamp' }) }] }]}>
         <View {...pan.panHandlers}>
           <View style={s.handle} />
           <View style={s.header}>

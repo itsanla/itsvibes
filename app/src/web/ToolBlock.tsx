@@ -49,7 +49,7 @@ function Step({ t, r, running }: { t: Tool; r?: ToolResult; running: boolean }) 
       </button>
       {open ? (
         <div className="iv-detail">
-          {edit ? <Diff del={edit.del} add={edit.add} /> : <CodeBlock lang="masukan" text={t.input} />}
+          {edit ? <Diff del={edit.del} add={edit.add} /> : <CodeBlock lang={/^(Bash|PowerShell)$/.test(t.name) ? 'perintah' : 'masukan'} text={t.detail ?? t.input} />}
           {r ? <CodeBlock lang={failed ? 'galat' : 'keluaran'} text={r.text || '(tanpa keluaran)'} err={failed} /> : null}
         </div>
       ) : null}

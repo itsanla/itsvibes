@@ -23,8 +23,9 @@ export type ChatItem =
   | { k: 'user'; id: string; ts: string; text: string; images?: number }
   | { k: 'assistant'; id: string; ts: string; text: string }
   | { k: 'thinking'; id: string; ts: string; text: string }
+  // detail: isi yang enak dibaca saat langkah dibuka (perintah saja, bukan JSON bawaan Claude)
   // added/removed: jumlah baris yang ditambah/dihapus oleh Edit, Write, MultiEdit
-  | { k: 'tool'; id: string; ts: string; name: string; summary: string; input: string; added?: number; removed?: number }
+  | { k: 'tool'; id: string; ts: string; name: string; summary: string; input: string; detail?: string; added?: number; removed?: number }
   | { k: 'tool_result'; id: string; ts: string; toolUseId: string; text: string; isError: boolean }
   | { k: 'system'; id: string; ts: string; text: string }
 
@@ -100,6 +101,7 @@ export type ClientMessage =
   | { t: 'models' }
   | { t: 'usage'; sessionId?: string }
   | { t: 'setSource'; source: SourceId }
+  | { t: 'deleteSessions'; ids: string[] }
   | { t: 'setCompactWindow'; tokens: number }
   | { t: 'answer'; answer: Answer }
   | { t: 'interrupt'; sessionId: string }
@@ -117,6 +119,7 @@ export type ServerMessage =
   | { t: 'models'; models: ModelOption[] }
   | { t: 'usage'; sessionId?: string; context: ContextInfo | null; plan: PlanInfo | null }
   | { t: 'settings'; settings: AiSettings }
+  | { t: 'sessionsDeleted'; deleted: string[]; skipped: { id: string; reason: string }[] }
   | { t: 'plan'; plan: PlanInfo | null } // kuota sumber aktif, disiarkan berkala
   | { t: 'tokens'; sessionId: string; total: number } // token konteks sesi, diperbarui selama Claude menjawab
   | { t: 'event'; sessionId: string; seq: number; item: ChatItem }

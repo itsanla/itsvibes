@@ -79,6 +79,14 @@ export function listFiles(): SessionFile[] {
   return [...byId.values()]
 }
 
+// Menghapus sesi sungguhan: berkas JSONL dan folder pendampingnya (subagent, hasil tool). Id sudah lolos UUID lewat findFile.
+export function deleteSessionFiles(f: SessionFile) {
+  fs.rmSync(f.file, { force: true })
+  fs.rmSync(path.join(path.dirname(f.file), f.id), { recursive: true, force: true })
+  delete metaCache[f.file]
+  metaDirty = true
+}
+
 export function findFile(id: string): SessionFile | undefined {
   if (!UUID.test(id)) return undefined
   return listFiles().find(f => f.id === id)
@@ -298,6 +306,17 @@ export function toolSummary(name: string, input: Record<string, unknown>): strin
   return clip(s.replace(/\s+/g, ' ').trim(), 160) || name
 }
 
+// Isi langkah saat dibuka: judulnya sudah tampil, jadi cukup perintah atau argumen utamanya
+function toolDetail(input: Record<string, unknown>, name: string): string {
+  const str = (k: string) => (typeof input[k] === 'string' ? (input[k] as string) : '')
+  const diff = (a: string, sign: string) => a.split('\n').map(l => `${sign} ${l}`).join('\n')
+  if (name === 'Edit') return clip([str('file_path'), diff(str('old_string'), '-'), diff(str('new_string'), '+')].join('\n'), 8000)
+  if (name === 'Write') return clip(`${str('file_path')}\n${str('content')}`, 8000)
+  const main = str('command') || str('file_path') || str('pattern') || str('url') || str('query') || str('prompt') || str('skill')
+  if (main) return clip(main, 8000)
+  return clip(Object.entries(input).map(([k, v]) => `${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`).join('\n'), 8000)
+}
+
 const lineCount = (s: unknown) => (typeof s === 'string' && s.length ? s.split('\n').length : 0)
 
 // jumlah baris ditambah/dihapus untuk label "+2 -2" pada langkah edit
@@ -383,6 +402,7 @@ export function toItems(d: any): ChatItem[] {
         items.push({
           k: 'tool', id: String(b.id ?? id), ts, name: String(b.name ?? 'tool'),
           summary: toolSummary(String(b.name ?? ''), input), input: clip(JSON.stringify(input, null, 1), 2000),
+          detail: toolDetail(input, String(b.name ?? '')),
           ...editStats(String(b.name ?? ''), input),
         })
       }

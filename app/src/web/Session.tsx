@@ -1,14 +1,13 @@
 import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ChatItem } from '../../../shared/protocol'
 import { useClient } from '../lib/client'
-import { MODES, STATUS, liveLine, shortPath } from '../lib/format'
+import { STATUS, shortPath } from '../lib/format'
 import { groupItems } from '../lib/group'
 import Composer from './Composer'
 import Markdown from './Markdown'
 import RequestCard from './RequestCard'
 import ToolBlock from './ToolBlock'
-import UsagePanel, { Ring } from './UsagePanel'
-import { I, Popover, copyText, setUI, useUI } from './ui'
+import { I, copyText, setUI, useUI } from './ui'
 import { useAttach, useDrop } from './useAttach'
 
 const EMPTY: ChatItem[] = []
@@ -82,7 +81,6 @@ export default function SessionView({ id }: { id: string }) {
   const chat = c.chats.get(id)
   const run = c.runs.get(id)
   const summary = c.sessions.find(x => x.id === id)
-  const usage = c.usage.get(id)
   const status = run?.status ?? summary?.status ?? 'closed'
   const busy = status === 'running' || status === 'starting' || status === 'waiting'
   const items = chat?.items ?? EMPTY
@@ -137,8 +135,6 @@ export default function SessionView({ id }: { id: string }) {
       e => c.showToast(e instanceof Error ? e.message : String(e)),
     )
   }
-  const mode = MODES.find(m => m.mode === run?.mode)
-  const active = !!run && run.status !== 'closed'
 
   return (
     <>
@@ -148,44 +144,6 @@ export default function SessionView({ id }: { id: string }) {
           <div className="iv-head-title" title={summary?.title}>{summary?.title ?? 'Sesi'}</div>
           <span className={`iv-pill ${pill.cls}`}>{pill.label}</span>
           {summary?.cwd ? <span className="iv-pill shrink" title={summary.cwd}><I n="folder" s={13} /> <span>{folderLabel(summary.cwd)}</span></span> : null}
-          <div className="iv-spacer" />
-          <Popover
-            dir="down"
-            right
-            trigger={(_, toggle) => (
-              <button className="iv-chip" onClick={toggle} title="Mode izin"><I n="shield" s={15} /><span>{mode?.label ?? 'Mode izin'}</span><I n="chevronDown" s={14} /></button>
-            )}
-          >
-            {close => (
-              <>
-                <div className="iv-pop-title">Mode izin</div>
-                {active ? MODES.map(m => (
-                  <button key={m.mode} className="iv-pop-item" onClick={() => { c.setMode(id, m.mode); close() }}>
-                    <span><span className="n">{m.label}</span><small>{m.hint}</small></span>
-                    {run?.mode === m.mode ? <span className="ck"><I n="check" s={18} w={2.2} /></span> : null}
-                  </button>
-                )) : <div style={{ padding: '6px 10px 8px', color: 'var(--dim)', fontSize: 13 }}>Mode bisa diubah setelah sesi berjalan. Kirim pesan untuk melanjutkannya.</div>}
-              </>
-            )}
-          </Popover>
-          <button className={`iv-chip${ui.panelOpen ? '' : ''}`} onClick={() => setUI({ panelOpen: !ui.panelOpen })} title="Kuota 5 jam, kuota mingguan, token konteks (Ctrl+\)">
-            <Ring percent={usage?.context?.percentage ?? null} />
-            <span>{liveLine(c.plan, c.tokens.get(id)) || 'Konteks'}</span>
-          </button>
-          <Popover
-            dir="down"
-            right
-            trigger={(_, toggle) => <button className="iv-icon-btn" onClick={toggle} title="Lainnya"><I n="dots" /></button>}
-          >
-            {close => (
-              <>
-                {active ? <button className="iv-pop-item" onClick={() => { c.stop(id); close() }} style={{ color: 'var(--err)' }}><span className="n">Hentikan proses sesi ini</span></button> : null}
-                <button className="iv-pop-item" onClick={() => { copyText(`claude --resume ${id}`); c.showToast('Perintah resume disalin'); close() }}><span><span className="n">Salin perintah claude --resume</span></span></button>
-                <button className="iv-pop-item" onClick={() => { copyText(id); c.showToast('ID sesi disalin'); close() }}><span><span className="n">Salin ID sesi</span><small>{id}</small></span></button>
-                <button className="iv-pop-item" onClick={() => { void c.loadHistory(id); close() }}><span><span className="n">Muat ulang riwayat</span></span></button>
-              </>
-            )}
-          </Popover>
         </header>
 
         {status === 'terminal' ? <div className="iv-banner">Sesi ini sedang terbuka di terminal Bima. Tutup di sana dulu untuk melanjutkannya dari sini.</div> : null}
@@ -228,9 +186,6 @@ export default function SessionView({ id }: { id: string }) {
         </div>
         {drag ? <div className="iv-dropmask">Lepas gambar untuk melampirkan</div> : null}
       </div>
-      {ui.panelOpen ? (
-        <UsagePanel usage={usage} loading={c.usageLoading} running={busy} onRefresh={() => c.requestUsage(id)} onClose={() => setUI({ panelOpen: false })} />
-      ) : null}
     </>
   )
 }

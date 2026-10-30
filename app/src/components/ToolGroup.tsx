@@ -73,7 +73,7 @@ function Step({ t, r, last, running }: { t: Tool; r?: Result; last: boolean; run
         </View>
         {open ? (
           <>
-            <Text selectable style={s.code}>{t.input}</Text>
+            <Text selectable style={s.code}>{t.detail ?? t.input}</Text>
             {r ? <Text selectable style={[s.code, r.isError && { color: C.err }]}>{r.text || '(tanpa keluaran)'}</Text> : null}
           </>
         ) : null}

@@ -3,7 +3,7 @@ import path from 'node:path'
 
 const home = os.homedir()
 
-export const VERSION = '1.4.0'
+export const VERSION = '1.5.0'
 // Traefik (coolify-proxy) menjangkau host lewat gateway jaringan coolify, jadi port ini tidak perlu terbuka ke internet
 export const HOST = process.env.ITSVIBES_HOST ?? '10.0.1.1'
 export const PORT = Number(process.env.ITSVIBES_PORT ?? 6700)

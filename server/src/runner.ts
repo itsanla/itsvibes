@@ -4,7 +4,7 @@ import path from 'node:path'
 import { query } from '@anthropic-ai/claude-agent-sdk'
 import type { PermissionResult, PermissionUpdate, Query, SDKMessage, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import { CLAUDE_BIN, DEFAULT_CWD, IDLE_MS, MIN_COMPACT_TOKENS, STATE_DIR } from './config.ts'
-import { findFile, lastContextTokens, liveElsewhere, markCreated, meta, toItems, toolSummary } from './sessions.ts'
+import { deleteSessionFiles, findFile, lastContextTokens, liveElsewhere, markCreated, meta, toItems, toolSummary } from './sessions.ts'
 import { MERAPI_MODEL, prepareProduk, sourceEnv, sourceList, sourceReady } from './sources.ts'
 import { COMPACT_WINDOWS } from '../../shared/protocol.ts'
 import type {
@@ -652,6 +652,40 @@ export class Hub {
     const context = r ? await withTimeout(r.contextUsage(), 20_000).catch(() => null) : null
     await this.refreshPlan()
     return { context, plan: this.plan }
+  }
+
+  // Sesi yang sedang bekerja atau terbuka di terminal dilewati; sesi yang hanya menganggur ditutup dulu
+  async deleteSessions(ids: string[]): Promise<{ deleted: string[]; skipped: { id: string; reason: string }[] }> {
+    const deleted: string[] = []
+    const skipped: { id: string; reason: string }[] = []
+    const live = liveElsewhere()
+    for (const id of ids) {
+      if (live.has(id)) {
+        skipped.push({ id, reason: 'terbuka di terminal' })
+        continue
+      }
+      const r = this.runs.get(id)
+      if (r && (r.status !== 'idle' || r.pending.size)) {
+        skipped.push({ id, reason: 'sedang berjalan' })
+        continue
+      }
+      if (r) {
+        await new Promise<void>(done => {
+          r.afterClose(done)
+          r.stop()
+        })
+      }
+      let f = findFile(id)
+      if (!f) {
+        skipped.push({ id, reason: 'tidak ditemukan' })
+        continue
+      }
+      // id yang sama bisa ada di lebih dari satu folder proyek
+      for (; f; f = findFile(id)) deleteSessionFiles(f)
+      this.savePref(id, { model: null, effort: null })
+      deleted.push(id)
+    }
+    return { deleted, skipped }
   }
 
   // sesi berakhir atas permintaan pengguna

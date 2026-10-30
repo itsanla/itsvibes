@@ -1,7 +1,8 @@
+import { useEffect } from 'react'
 import type { PlanWindow } from '../../../shared/protocol'
-import { useClient, type Usage } from '../lib/client'
+import { useClient } from '../lib/client'
 import AiControls from './AiControls'
-import { I } from './ui'
+import { Dialog, setUI } from './ui'
 
 const COLORS: Record<string, string> = {
   messages: '#5b9cf5', memory_files: '#e8703a', system_tools: '#3fb27f', skills: '#e0a526', custom_agents: '#b07cf0',
@@ -41,24 +42,19 @@ function Plan({ w }: { w: PlanWindow }) {
   )
 }
 
-// Panel kanan: isi jendela konteks sesi dan kuota paket (sama dengan /context dan /usage di terminal)
-export default function UsagePanel({ usage, loading, running, onRefresh, onClose }: {
-  usage?: Usage
-  loading: boolean
-  running: boolean
-  onRefresh: () => void
-  onClose: () => void
-}) {
+// Overlay penggunaan: sumber AI, autocompact, isi jendela konteks, dan kuota paket (sama dengan /context dan /usage di terminal)
+export default function UsagePanel({ id }: { id?: string }) {
+  const c = useClient()
+  const usage = id ? c.usage.get(id) : undefined
   const ctx = usage?.context
-  const plan = useClient().plan
+  const plan = c.plan
+  const status = id ? c.runs.get(id)?.status : undefined
+  const running = status === 'running' || status === 'starting' || status === 'waiting'
+  useEffect(() => {
+    c.requestUsage(id)
+  }, [c, id])
   return (
-    <aside className="iv-panel">
-      <h4>
-        Penggunaan
-        <span className="iv-spacer" />
-        <button className="iv-icon-btn" onClick={onRefresh} title="Muat ulang">{loading ? <span className="iv-spin" /> : <I n="refresh" />}</button>
-        <button className="iv-icon-btn" onClick={onClose} title="Tutup panel (Ctrl+\)"><I n="close" /></button>
-      </h4>
+    <Dialog title="Penggunaan" width={480} onClose={() => setUI({ panelOpen: false })}>
       <AiControls />
       <div className="iv-qhead" style={{ margin: '16px 0 6px' }}>Jendela konteks</div>
       {ctx ? (
@@ -80,7 +76,7 @@ export default function UsagePanel({ usage, loading, running, onRefresh, onClose
           {ctx.mcpTools ? <small>Alat MCP: {ctx.mcpTools}</small> : null}
         </div>
       ) : (
-        <div className="iv-card"><small style={{ marginTop: 0 }}>{running ? 'Memuat konteks…' : 'Konteks terlihat saat sesi ini sedang berjalan. Kirim pesan untuk melanjutkannya.'}</small></div>
+        <div className="iv-card"><small style={{ marginTop: 0 }}>{running ? 'Memuat konteks…' : id ? 'Konteks terlihat saat sesi ini sedang berjalan. Kirim pesan untuk melanjutkannya.' : 'Buka sesi yang sedang berjalan untuk melihat konteksnya.'}</small></div>
       )}
       {plan?.session ? (
         <>
@@ -94,6 +90,6 @@ export default function UsagePanel({ usage, loading, running, onRefresh, onClose
           {plan.weekly.map(w => <Plan key={w.label} w={w} />)}
         </>
       ) : null}
-    </aside>
+    </Dialog>
   )
 }
