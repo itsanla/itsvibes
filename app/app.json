@@ -1,0 +1,44 @@
+{
+  "expo": {
+    "name": "itsvibes",
+    "slug": "itsvibes",
+    "version": "1.3.1",
+    "scheme": "itsvibes",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#0f1115",
+    "android": {
+      "package": "id.anla.itsvibes",
+      "versionCode": 5,
+      "adaptiveIcon": {
+        "backgroundColor": "#0f1115",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "./plugins/withReleaseSigning",
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "itsvibes memakai kamera untuk memotret lalu mengirim fotonya ke Claude",
+          "photosPermission": "itsvibes membuka galeri untuk mengirim foto ke Claude"
+        }
+      ]
+    ],
+    "web": {
+      "bundler": "metro",
+      "output": "single",
+      "favicon": "./assets/favicon.png",
+      "name": "itsvibes",
+      "shortName": "itsvibes",
+      "backgroundColor": "#1a1a1a",
+      "themeColor": "#1a1a1a"
+    }
+  }
+}

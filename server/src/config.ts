@@ -1,0 +1,20 @@
+import os from 'node:os'
+import path from 'node:path'
+
+const home = os.homedir()
+
+export const VERSION = '1.3.0'
+// Traefik (coolify-proxy) menjangkau host lewat gateway jaringan coolify, jadi port ini tidak perlu terbuka ke internet
+export const HOST = process.env.ITSVIBES_HOST ?? '10.0.1.1'
+export const PORT = Number(process.env.ITSVIBES_PORT ?? 6700)
+export const CLAUDE_BIN = process.env.ITSVIBES_CLAUDE ?? path.join(home, '.local/bin/claude')
+export const PROJECTS_DIR = path.join(home, '.claude/projects')
+export const LIVE_DIR = path.join(home, '.claude/sessions')
+export const CONFIG_DIR = process.env.ITSVIBES_CONFIG ?? path.join(home, '.config/itsvibes')
+export const STATE_DIR = process.env.ITSVIBES_STATE ?? path.join(home, '.local/state/itsvibes')
+export const APK_DIR = path.join(STATE_DIR, 'apk')
+// hasil `expo export -p web` (deploy/build-web.sh); kosong = versi web belum dipasang
+export const WEB_DIR = process.env.ITSVIBES_WEB ?? path.join(STATE_DIR, 'web')
+export const DEFAULT_CWD = process.env.ITSVIBES_CWD ?? home
+// sesi yang menganggur selama ini dihentikan; isinya tetap di JSONL dan dilanjutkan saat ada pesan baru
+export const IDLE_MS = Number(process.env.ITSVIBES_IDLE_MIN ?? 30) * 60_000

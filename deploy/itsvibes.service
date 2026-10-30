@@ -1,0 +1,14 @@
+[Unit]
+Description=itsvibes-server (Claude Code di Bima untuk aplikasi Android itsvibes)
+After=network-online.target
+
+[Service]
+WorkingDirectory=/Data_A/project/personal/itsvibes/server
+ExecStart=/home/itsanla/.nvm/versions/node/v24.21.0/bin/node src/index.ts
+Environment=PATH=/home/itsanla/.local/bin:/home/itsanla/.nvm/versions/node/v24.21.0/bin:/usr/local/bin:/usr/bin:/bin
+# 10.0.1.1 (gateway jaringan coolify) baru ada setelah Docker jalan; gagal bind diulang otomatis
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=default.target
