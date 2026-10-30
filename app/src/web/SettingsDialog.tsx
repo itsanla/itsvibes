@@ -3,6 +3,7 @@ import { router } from 'expo-router'
 import { useEffect, useState } from 'react'
 import { useClient } from '../lib/client'
 import Notifier from '../lib/notifier'
+import AiControls from './AiControls'
 import { Dialog, copyText, setUI } from './ui'
 
 export default function SettingsDialog() {
@@ -24,6 +25,10 @@ export default function SettingsDialog() {
         <h5>Server</h5>
         <div className="iv-line"><span>Alamat</span><span>{c.url}</span></div>
         <div className="iv-line"><span>Koneksi</span><span>{c.conn === 'online' ? 'Tersambung' : c.conn === 'unauthorized' ? 'Token tidak berlaku' : c.conn === 'connecting' ? 'Menyambung…' : 'Terputus'}</span></div>
+      </div>
+
+      <div className="iv-sec">
+        <AiControls />
       </div>
 
       <div className="iv-sec">

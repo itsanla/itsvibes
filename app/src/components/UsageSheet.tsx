@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native'
 import type { ContextInfo, PlanWindow } from '../../../shared/protocol'
-import type { Usage } from '../lib/client'
+import { useClient, type Usage } from '../lib/client'
 import { C } from '../lib/theme'
+import AiControls from './AiControls'
 import Icon from './Icon'
 import Sheet, { SectionLabel } from './Sheet'
 
@@ -85,6 +86,7 @@ export default function UsageSheet({ visible, onClose, usage, loading, running, 
   running: boolean
   onRefresh: () => void
 }) {
+  const plan = useClient().plan
   return (
     <Sheet
       visible={visible}
@@ -96,6 +98,7 @@ export default function UsageSheet({ visible, onClose, usage, loading, running, 
         </Pressable>
       }
     >
+      <AiControls />
       <SectionLabel>Konteks</SectionLabel>
       {usage?.context ? (
         <ContextCard ctx={usage.context} />
@@ -104,16 +107,16 @@ export default function UsageSheet({ visible, onClose, usage, loading, running, 
           <Text style={s.cardSub}>{running ? 'Memuat konteks…' : 'Konteks terlihat saat sesi ini sedang berjalan. Kirim pesan untuk melanjutkannya.'}</Text>
         </View>
       )}
-      {usage?.plan?.session ? (
+      {plan?.session ? (
         <>
           <SectionLabel>Penggunaan paket</SectionLabel>
-          <PlanCard w={usage.plan.session} />
+          <PlanCard w={plan.session} />
         </>
       ) : null}
-      {usage?.plan?.weekly.length ? (
+      {plan?.weekly.length ? (
         <>
           <SectionLabel>Batas mingguan</SectionLabel>
-          {usage.plan.weekly.map(w => <PlanCard key={w.label} w={w} />)}
+          {plan.weekly.map(w => <PlanCard key={w.label} w={w} />)}
         </>
       ) : null}
       {!usage && !loading ? <Text style={s.cardSub}>Belum ada data. Ketuk muat ulang.</Text> : null}

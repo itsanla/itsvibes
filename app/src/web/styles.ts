@@ -67,6 +67,10 @@ input, textarea { font: inherit; color: inherit; }
 .iv-pill.ok { color: var(--ok); } .iv-pill.warn { color: var(--warn); } .iv-pill.run { color: var(--accent); } .iv-pill.blue { color: var(--link); }
 .iv-chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 8px; background: var(--card); border: 1px solid var(--border); color: var(--text); font-size: 13px; font-weight: 600; white-space: nowrap; max-width: 260px; }
 .iv-chip:hover { background: var(--hover); }
+.iv-seg { display: flex; gap: 4px; padding: 3px; border-radius: 10px; background: var(--panel2); }
+.iv-seg button { flex: 1; padding: 6px 4px; border: 0; border-radius: 8px; background: transparent; color: var(--dim); font-size: 13px; font-weight: 600; cursor: pointer; }
+.iv-seg button:hover { color: var(--text); } .iv-seg button.on { background: var(--card); color: var(--text); } .iv-seg button.off { opacity: .5; }
+.iv-seg-note { margin: 6px 2px 0; color: var(--dim); font-size: 12px; line-height: 1.4; overflow-wrap: anywhere; }
 .iv-chip > span { overflow: hidden; text-overflow: ellipsis; }
 .iv-banner { padding: 8px 16px; background: #1d2a3f; color: var(--link); font-size: 13px; flex: none; }
 .iv-banner.err { background: #3a1f1f; color: var(--err); display: flex; align-items: center; gap: 10px; }

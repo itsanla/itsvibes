@@ -91,3 +91,11 @@ deploy/build-web.sh      # hasil ke ~/.local/state/itsvibes/web, langsung tampil
 - Jangan membuka sesi yang sama di terminal dan HP bersamaan. Server menolak melanjutkan sesi yang sedang terbuka di
   terminal Bima; untuk laptop, `bsync claude` akan memisahkannya jadi dua sesi.
 - Pemakaian lewat Agent SDK bisa dihitung berbeda dengan pemakaian interaktif oleh Anthropic. Pantau `/usage`.
+
+## Sumber AI
+
+Dipilih dari panel Penggunaan atau Pengaturan, berlaku untuk seluruh server:
+
+- Personal: login Claude Code bawaan (`~/.claude`).
+- Produk: login kedua. Sekali saja di server: `CLAUDE_CONFIG_DIR=~/.config/itsvibes/accounts/produk claude auth login`.
+- Merapi: gateway berformat Anthropic. Key di `~/.config/itsvibes/merapi.env` (`ITSVIBES_MERAPI_KEY=...`, mode 600), tidak pernah di repo.

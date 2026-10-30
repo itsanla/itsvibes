@@ -1,5 +1,6 @@
 import type { PlanWindow } from '../../../shared/protocol'
-import type { Usage } from '../lib/client'
+import { useClient, type Usage } from '../lib/client'
+import AiControls from './AiControls'
 import { I } from './ui'
 
 const COLORS: Record<string, string> = {
@@ -49,6 +50,7 @@ export default function UsagePanel({ usage, loading, running, onRefresh, onClose
   onClose: () => void
 }) {
   const ctx = usage?.context
+  const plan = useClient().plan
   return (
     <aside className="iv-panel">
       <h4>
@@ -57,7 +59,8 @@ export default function UsagePanel({ usage, loading, running, onRefresh, onClose
         <button className="iv-icon-btn" onClick={onRefresh} title="Muat ulang">{loading ? <span className="iv-spin" /> : <I n="refresh" />}</button>
         <button className="iv-icon-btn" onClick={onClose} title="Tutup panel (Ctrl+\)"><I n="close" /></button>
       </h4>
-      <div className="iv-qhead" style={{ margin: '0 0 6px' }}>Jendela konteks</div>
+      <AiControls />
+      <div className="iv-qhead" style={{ margin: '16px 0 6px' }}>Jendela konteks</div>
       {ctx ? (
         <div className="iv-card">
           <div className="row"><span>{Math.round(ctx.percentage)}% terpakai</span><span>{fmt(ctx.total)} dari {fmt(ctx.max)}</span></div>
@@ -79,16 +82,16 @@ export default function UsagePanel({ usage, loading, running, onRefresh, onClose
       ) : (
         <div className="iv-card"><small style={{ marginTop: 0 }}>{running ? 'Memuat konteks…' : 'Konteks terlihat saat sesi ini sedang berjalan. Kirim pesan untuk melanjutkannya.'}</small></div>
       )}
-      {usage?.plan?.session ? (
+      {plan?.session ? (
         <>
           <div className="iv-qhead" style={{ margin: '16px 0 6px' }}>Penggunaan paket</div>
-          <Plan w={usage.plan.session} />
+          <Plan w={plan.session} />
         </>
       ) : null}
-      {usage?.plan?.weekly.length ? (
+      {plan?.weekly.length ? (
         <>
           <div className="iv-qhead" style={{ margin: '16px 0 6px' }}>Batas mingguan</div>
-          {usage.plan.weekly.map(w => <Plan key={w.label} w={w} />)}
+          {plan.weekly.map(w => <Plan key={w.label} w={w} />)}
         </>
       ) : null}
     </aside>

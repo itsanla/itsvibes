@@ -3,8 +3,8 @@ import { AppState, PermissionsAndroid, Platform } from 'react-native'
 import Notifier from './notifier'
 import { storage } from './storage'
 import type {
-  Answer, ChatItem, ClientMessage, ContextInfo, EffortLevel, HistoryPage, ImageAttachment, ModelOption, PendingRequest,
-  PermissionMode, PlanInfo, ServerMessage, SessionStatus, SessionSummary,
+  AiSettings, Answer, ChatItem, ClientMessage, ContextInfo, EffortLevel, HistoryPage, ImageAttachment, ModelOption, PendingRequest,
+  PermissionMode, PlanInfo, ServerMessage, SessionStatus, SessionSummary, SourceId,
 } from '../../../shared/protocol'
 
 // Satu koneksi WebSocket ke itsvibes-server untuk seluruh aplikasi. Layar membaca state lewat useClient().
@@ -43,6 +43,9 @@ class Client {
   models: ModelOption[] = []
   usage = new Map<string, Usage>() // kunci '' = kuota paket tanpa sesi
   usageLoading = false
+  settings: AiSettings | null = null
+  plan: PlanInfo | null = null // kuota sumber aktif, diperbarui server secara berkala
+  tokens = new Map<string, number>() // token konteks per sesi, diperbarui selama Claude menjawab
   toast: string | null = null
 
   private ws: WebSocket | null = null
@@ -300,6 +303,16 @@ class Client {
       case 'usage':
         this.usageLoading = false
         this.usage.set(m.sessionId ?? '', { context: m.context, plan: m.plan, at: Date.now() })
+        if (m.sessionId && m.context) this.tokens.set(m.sessionId, m.context.total)
+        break
+      case 'settings':
+        this.settings = m.settings
+        break
+      case 'plan':
+        this.plan = m.plan
+        break
+      case 'tokens':
+        this.tokens.set(m.sessionId, m.total)
         break
       case 'status': {
         const prev = this.runs.get(m.sessionId)
@@ -448,6 +461,14 @@ class Client {
 
   setEffort(id: string, effort: EffortLevel | 'default') {
     if (!this.raw({ t: 'effort', sessionId: id, effort })) this.showToast('Belum tersambung ke Bima')
+  }
+
+  setSource(source: SourceId) {
+    if (!this.raw({ t: 'setSource', source })) this.showToast('Belum tersambung ke Bima')
+  }
+
+  setCompactWindow(tokens: number) {
+    if (!this.raw({ t: 'setCompactWindow', tokens })) this.showToast('Belum tersambung ke Bima')
   }
 
   requestModels() {

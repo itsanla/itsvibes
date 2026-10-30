@@ -73,6 +73,12 @@ export interface PlanWindow { label: string; utilization: number | null; resetsA
 // kuota paket claude.ai milik akun di Bima (sama dengan /usage)
 export interface PlanInfo { subscription: string | null; session: PlanWindow | null; weekly: PlanWindow[] }
 
+// sumber AI yang dipakai sesi: akun Claude Code perusahaan, akun pribadi, atau gateway Merapi
+export type SourceId = 'produk' | 'personal' | 'merapi'
+export interface SourceInfo { id: SourceId; label: string; ready: boolean; hint: string }
+export const COMPACT_WINDOWS = [100_000, 200_000, 500_000, 1_000_000]
+export interface AiSettings { source: SourceId; compactWindow: number; sources: SourceInfo[] }
+
 // foto dari HP, sudah diperkecil di HP (sisi terpanjang <= 1568 px), base64 tanpa awalan data:
 export interface ImageAttachment { mediaType: 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif'; data: string }
 
@@ -93,6 +99,8 @@ export type ClientMessage =
   | { t: 'effort'; sessionId: string; effort: EffortLevel | 'default' }
   | { t: 'models' }
   | { t: 'usage'; sessionId?: string }
+  | { t: 'setSource'; source: SourceId }
+  | { t: 'setCompactWindow'; tokens: number }
   | { t: 'answer'; answer: Answer }
   | { t: 'interrupt'; sessionId: string }
   | { t: 'mode'; sessionId: string; mode: PermissionMode }
@@ -108,6 +116,9 @@ export type ServerMessage =
     }
   | { t: 'models'; models: ModelOption[] }
   | { t: 'usage'; sessionId?: string; context: ContextInfo | null; plan: PlanInfo | null }
+  | { t: 'settings'; settings: AiSettings }
+  | { t: 'plan'; plan: PlanInfo | null } // kuota sumber aktif, disiarkan berkala
+  | { t: 'tokens'; sessionId: string; total: number } // token konteks sesi, diperbarui selama Claude menjawab
   | { t: 'event'; sessionId: string; seq: number; item: ChatItem }
   | { t: 'delta'; sessionId: string; seq: number; text: string }
   | { t: 'resync'; sessionId: string } // event terlewat terlalu banyak: ambil ulang riwayat

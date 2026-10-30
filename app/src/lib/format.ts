@@ -1,4 +1,4 @@
-import type { PermissionMode, SessionStatus } from '../../../shared/protocol'
+import type { PermissionMode, PlanInfo, SessionStatus } from '../../../shared/protocol'
 import { C } from './theme'
 
 export function timeAgo(ms: number): string {
@@ -31,3 +31,12 @@ export const MODES: { mode: PermissionMode; label: string; hint: string }[] = [
   { mode: 'auto', label: 'Auto', hint: 'Classifier yang memutuskan, bertanya bila ragu' },
   { mode: 'bypassPermissions', label: 'Bypass', hint: 'Semua tool tanpa izin. Hati-hati.' },
 ]
+
+// angka ringkas di kanan atas: kuota 5 jam, kuota mingguan, token konteks ("12% 16% 265k")
+export function liveLine(plan: PlanInfo | null, tokens?: number): string {
+  const pct = (u?: number | null) => (u === null || u === undefined ? null : `${Math.round(u)}%`)
+  const week = plan?.weekly.find(w => w.label === 'Semua model') ?? plan?.weekly[0]
+  return [pct(plan?.session?.utilization), pct(week?.utilization), tokens ? `${Math.round(tokens / 1000)}k` : null].filter(Boolean).join(' ')
+}
+
+export const windowLabel = (n: number) => (n >= 1e6 ? `${n / 1e6}M` : `${n / 1000}k`)

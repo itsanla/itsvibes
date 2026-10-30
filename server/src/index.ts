@@ -37,6 +37,9 @@ const hub = new Hub({
     const msg: ServerMessage = { t: 'notify', id: crypto.randomUUID(), sessionId, title, body, kind }
     for (const c of conns) if (c.role === 'notifier') sendTo(c, msg)
   },
+  appCount() {
+    return [...conns].filter(c => c.role === 'app').length
+  },
   started(ref, sessionId) {
     for (const c of conns) if (c.role === 'app') sendTo(c, { t: 'started', ref, sessionId })
   },
@@ -246,7 +249,12 @@ server.on('upgrade', (req, socket, head) => {
     const c: Conn = { ws, role: url.searchParams.get('role') === 'notifier' ? 'notifier' : 'app', subs: new Set(), focus: null, visible: false, alive: true }
     conns.add(c)
     sendTo(c, { t: 'hello', version: VERSION, protocol: PROTOCOL_VERSION })
-    if (c.role === 'app') for (const r of hub.runs.values()) sendTo(c, r.statusMessage())
+    if (c.role === 'app') {
+      for (const r of hub.runs.values()) sendTo(c, r.statusMessage())
+      sendTo(c, { t: 'settings', settings: hub.settings() })
+      sendTo(c, { t: 'plan', plan: hub.plan })
+      void hub.refreshPlan()
+    }
     ws.on('pong', () => (c.alive = true))
     ws.on('close', () => conns.delete(c))
     ws.on('message', raw => {
@@ -271,6 +279,7 @@ async function onMessage(c: Conn, m: ClientMessage) {
       return
     case 'subscribe': {
       c.subs.add(m.sessionId)
+      sendTo(c, { t: 'tokens', sessionId: m.sessionId, total: hub.tokens(m.sessionId) })
       const r = hub.runs.get(m.sessionId)
       if (!r) {
         const pid = liveElsewhere().get(m.sessionId)
@@ -317,6 +326,10 @@ async function onMessage(c: Conn, m: ClientMessage) {
       const u = await hub.usage(m.sessionId)
       return sendTo(c, { t: 'usage', sessionId: m.sessionId, context: u.context, plan: u.plan })
     }
+    case 'setSource':
+      return hub.setSource(m.source)
+    case 'setCompactWindow':
+      return hub.setCompactWindow(m.tokens)
     case 'answer':
       if (!hub.answer(m.answer)) sendTo(c, { t: 'error', message: 'Permintaan itu sudah tidak menunggu jawaban' })
       return
@@ -325,7 +338,7 @@ async function onMessage(c: Conn, m: ClientMessage) {
     case 'mode':
       return hub.runs.get(m.sessionId)?.setMode(m.mode)
     case 'stop':
-      return hub.runs.get(m.sessionId)?.stop()
+      return hub.end(m.sessionId)
   }
 }
 

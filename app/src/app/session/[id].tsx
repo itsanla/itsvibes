@@ -17,7 +17,7 @@ import ToolGroup from '../../components/ToolGroup'
 import UsageSheet from '../../components/UsageSheet'
 import { useClient } from '../../lib/client'
 import { COLUMN, useWide } from '../../lib/layout'
-import { MODES, STATUS } from '../../lib/format'
+import { MODES, STATUS, liveLine } from '../../lib/format'
 import { C } from '../../lib/theme'
 
 type Tool = Extract<ChatItem, { k: 'tool' }>
@@ -111,7 +111,8 @@ export default function SessionScreen() {
             {st.label || 'Tidak berjalan'}{c.conn !== 'online' ? ' · offline' : ''}
           </Text>
         </View>
-        <Pressable onPress={openUsage} hitSlop={10} style={s.headerBtn}>
+        <Pressable onPress={openUsage} hitSlop={10} style={[s.headerBtn, s.live]}>
+          <Text style={s.liveText} numberOfLines={1}>{liveLine(c.plan, c.tokens.get(id))}</Text>
           <ContextRing percent={usage?.context?.percentage ?? null} />
         </Pressable>
         <Pressable onPress={openMenu} hitSlop={10} style={s.headerBtn}>
@@ -228,6 +229,8 @@ const s = StyleSheet.create({
   title: { color: C.text, fontSize: 16, fontWeight: '700' },
   sub: { fontSize: 12, marginTop: 2 },
   headerBtn: { padding: 6 },
+  live: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  liveText: { color: C.dim, fontSize: 12, fontVariant: ['tabular-nums'] },
   banner: { backgroundColor: '#1d2a3f', padding: 10 },
   bannerText: { color: C.link, fontSize: 13 },
   streaming: { paddingHorizontal: 16, paddingVertical: 4, opacity: 0.9 },

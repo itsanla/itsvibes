@@ -1,7 +1,7 @@
 import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ChatItem } from '../../../shared/protocol'
 import { useClient } from '../lib/client'
-import { MODES, STATUS, shortPath } from '../lib/format'
+import { MODES, STATUS, liveLine, shortPath } from '../lib/format'
 import { groupItems } from '../lib/group'
 import Composer from './Composer'
 import Markdown from './Markdown'
@@ -168,9 +168,9 @@ export default function SessionView({ id }: { id: string }) {
               </>
             )}
           </Popover>
-          <button className={`iv-chip${ui.panelOpen ? '' : ''}`} onClick={() => setUI({ panelOpen: !ui.panelOpen })} title="Panel penggunaan (Ctrl+\)">
+          <button className={`iv-chip${ui.panelOpen ? '' : ''}`} onClick={() => setUI({ panelOpen: !ui.panelOpen })} title="Kuota 5 jam, kuota mingguan, token konteks (Ctrl+\)">
             <Ring percent={usage?.context?.percentage ?? null} />
-            <span>{usage?.context ? `${Math.round(usage.context.percentage)}%` : 'Konteks'}</span>
+            <span>{liveLine(c.plan, c.tokens.get(id)) || 'Konteks'}</span>
           </button>
           <Popover
             dir="down"

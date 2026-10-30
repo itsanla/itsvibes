@@ -3,6 +3,7 @@ import Constants from 'expo-constants'
 import { router } from 'expo-router'
 import { type ReactNode, useEffect, useState } from 'react'
 import { AppState, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
+import AiControls from '../components/AiControls'
 import Sheet, { Group, Row } from '../components/Sheet'
 import { COLUMN_NARROW } from '../lib/layout'
 import { useClient } from '../lib/client'
@@ -42,6 +43,8 @@ export default function Settings() {
         <Line label="Alamat" value={c.url} />
         <Line label="Koneksi aplikasi" value={c.conn === 'online' ? 'Tersambung' : c.conn === 'unauthorized' ? 'Token tidak berlaku' : c.conn === 'connecting' ? 'Menyambung…' : 'Terputus'} />
       </Section>
+
+      <AiControls />
 
       <Section title={WEB ? 'Notifikasi browser' : 'Notifikasi (mode siaga)'}>
         <Text style={s.help}>

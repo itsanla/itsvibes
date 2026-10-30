@@ -3,11 +3,13 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { query } from '@anthropic-ai/claude-agent-sdk'
 import type { PermissionResult, PermissionUpdate, Query, SDKMessage, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
-import { CLAUDE_BIN, DEFAULT_CWD, IDLE_MS, STATE_DIR } from './config.ts'
-import { findFile, liveElsewhere, markCreated, meta, toItems, toolSummary } from './sessions.ts'
+import { CLAUDE_BIN, DEFAULT_CWD, IDLE_MS, MIN_COMPACT_TOKENS, STATE_DIR } from './config.ts'
+import { findFile, lastContextTokens, liveElsewhere, markCreated, meta, toItems, toolSummary } from './sessions.ts'
+import { MERAPI_MODEL, prepareProduk, sourceEnv, sourceList, sourceReady } from './sources.ts'
+import { COMPACT_WINDOWS } from '../../shared/protocol.ts'
 import type {
-  Answer, ChatItem, ContextInfo, EffortLevel, ImageAttachment, ModelOption, PendingRequest, PermissionMode, PlanInfo,
-  PlanWindow, Question, ServerMessage, SessionStatus,
+  AiSettings, Answer, ChatItem, ContextInfo, EffortLevel, ImageAttachment, ModelOption, PendingRequest, PermissionMode, PlanInfo,
+  PlanWindow, Question, ServerMessage, SessionStatus, SourceId,
 } from '../../shared/protocol.ts'
 
 // Satu Run = satu proses Claude Code (binary resmi di Bima, lewat Agent SDK) yang membawa satu sesi.
@@ -54,21 +56,22 @@ export interface HubEvents {
   toSubscribers(sessionId: string, msg: ServerMessage): void
   toAll(msg: ServerMessage): void
   notify(sessionId: string, kind: 'done' | 'request' | 'error', title: string, body: string): void
+  appCount(): number
   started(ref: string, sessionId: string): void
 }
 
 const clip = (s: string, n: number) => (s.length > n ? s.slice(0, n) + '…' : s)
 
-// itsvibes selalu memakai login langganan claude.ai di Bima. API key dan variabel dari sesi Claude Code
-// induk (kalau server dijalankan dari dalam Claude Code) dibuang supaya tidak mengambil alih login itu.
-function childEnv(): Record<string, string> {
+// Login ditentukan oleh sumber AI yang dipilih. API key dan variabel dari sesi Claude Code induk (kalau server
+// dijalankan dari dalam Claude Code) dibuang supaya tidak mengambil alih login itu.
+function childEnv(source: SourceId): Record<string, string> {
   const env: Record<string, string> = {}
   for (const [k, v] of Object.entries(process.env)) {
     if (v === undefined) continue
-    if (k === 'ANTHROPIC_API_KEY' || k === 'ANTHROPIC_AUTH_TOKEN' || k === 'CLAUDECODE' || k.startsWith('CLAUDE_CODE_')) continue
+    if (k === 'ANTHROPIC_API_KEY' || k === 'ANTHROPIC_AUTH_TOKEN' || k === 'ANTHROPIC_BASE_URL' || k === 'CLAUDECODE' || k === 'CLAUDE_CONFIG_DIR' || k.startsWith('CLAUDE_CODE_')) continue
     env[k] = v
   }
-  return env
+  return { ...env, ...sourceEnv(source) }
 }
 
 export class Run {
@@ -87,19 +90,36 @@ export class Run {
   private hub: Hub
   model = '' // pilihan model (alias seperti "opus") atau model yang dilaporkan Claude Code saat mulai
   effort: EffortLevel | undefined
+  readonly source: SourceId
+  tokens = 0 // token konteks saat ini: input panggilan terakhir ditambah output yang sudah mengalir
+  closing = false
+  stopWhenIdle = false // sumber diganti saat sesi ini bekerja: tutup begitu gilirannya selesai
+  private tokenBase = 0
+  private tokensSentAt = 0
+  private dirty = false // ada percakapan baru sejak compact terakhir
+  private compacting = false
+  private closeAfterCompact = false
+  private closed: (() => void)[] = []
 
   constructor(
     hub: Hub,
     opts: {
       sessionId?: string; cwd: string; mode: PermissionMode; ref?: string; title?: string; model?: string; effort?: EffortLevel
+      source: SourceId; compactWindow: number; tokens?: number
     },
   ) {
     this.hub = hub
     this.cwd = opts.cwd
     this.mode = opts.mode
     this.title = opts.title ?? ''
+    this.source = opts.source
+    this.tokens = opts.tokens ?? 0
     if (opts.model && opts.model !== 'default') this.model = opts.model
     this.effort = opts.effort
+    if (this.source === 'merapi') {
+      this.model = MERAPI_MODEL
+      this.effort = undefined
+    }
     if (opts.sessionId) this.sessionId = opts.sessionId
     this.q = query({
       prompt: this.inbox,
@@ -109,7 +129,8 @@ export class Run {
         model: this.model || undefined,
         effort: this.effort,
         pathToClaudeCodeExecutable: CLAUDE_BIN,
-        env: childEnv(),
+        env: childEnv(this.source),
+        settings: { autoCompactWindow: opts.compactWindow },
         includePartialMessages: true,
         permissionMode: this.mode,
         allowDangerouslySkipPermissions: true, // supaya mode bypass bisa dipilih dari HP
@@ -151,6 +172,8 @@ export class Run {
 
   send(text: string, images: ImageAttachment[] = []) {
     this.lastActivity = Date.now()
+    this.dirty = true
+    this.closeAfterCompact = false // pesan baru membatalkan penutupan sesi setelah compact
     if (!this.title) this.lastPrompt ||= clip(text.replace(/\s+/g, ' '), 60) || 'Foto'
     const content = images.length
       ? [
@@ -186,7 +209,21 @@ export class Run {
       this.pending.clear()
       this.setStatus('closed')
       this.hub.remove(this)
+      for (const fn of this.closed.splice(0)) fn()
     }
+  }
+
+  // pesan yang datang saat proses sedang ditutup dikirim ulang lewat proses baru
+  afterClose(fn: () => void) {
+    this.closed.push(fn)
+  }
+
+  private setTokens(total: number) {
+    this.tokens = total
+    const now = Date.now()
+    if (now - this.tokensSentAt < 1000) return
+    this.tokensSentAt = now
+    this.hub.events.toSubscribers(this.sessionId, { t: 'tokens', sessionId: this.sessionId, total })
   }
 
   private handle(m: SDKMessage, ref?: string) {
@@ -207,7 +244,16 @@ export class Run {
       return
     }
     if (m.type === 'stream_event') {
-      const ev = m.event as { type: string; delta?: { type: string; text?: string } }
+      const ev = m.event as {
+        type: string; delta?: { type: string; text?: string }; usage?: { output_tokens?: number }
+        message?: { usage?: { input_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number } }
+      }
+      if (m.parent_tool_use_id === null && ev.type === 'message_start' && ev.message?.usage) {
+        const u = ev.message.usage
+        this.tokenBase = (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0)
+        this.setTokens(this.tokenBase)
+      }
+      if (m.parent_tool_use_id === null && ev.type === 'message_delta' && ev.usage?.output_tokens) this.setTokens(this.tokenBase + ev.usage.output_tokens)
       if (m.parent_tool_use_id === null && ev.type === 'content_block_delta' && ev.delta?.type === 'text_delta' && ev.delta.text) {
         this.emit({ t: 'delta', sessionId: this.sessionId, seq: ++this.seq, text: ev.delta.text })
       }
@@ -230,10 +276,24 @@ export class Run {
     }
     if (m.type === 'system' && m.subtype === 'compact_boundary') {
       this.item({ k: 'system', id: m.uuid, ts: new Date().toISOString(), text: 'Percakapan diringkas (compact)' })
+      this.dirty = false
+      this.tokensSentAt = 0
+      if (m.compact_metadata.post_tokens) this.setTokens(m.compact_metadata.post_tokens)
       return
     }
     if (m.type === 'result') {
       this.setStatus(this.pending.size ? 'waiting' : 'idle')
+      this.tokensSentAt = 0
+      if (this.tokens) this.setTokens(this.tokens)
+      void this.hub.refreshPlan()
+      if (this.compacting) {
+        // compact otomatis: tidak perlu notifikasi "selesai"
+        this.compacting = false
+        this.lastText = ''
+        if (this.closeAfterCompact || this.stopWhenIdle) this.stop()
+        return
+      }
+      if (this.stopWhenIdle && !this.pending.size) this.stop()
       if (m.subtype === 'success') {
         this.hub.events.notify(this.sessionId, 'done', `Selesai · ${this.label}`, clip((this.lastText || m.result || 'Selesai').replace(/\s+/g, ' '), 200))
       } else {
@@ -312,12 +372,14 @@ export class Run {
   }
 
   async setModel(model: string) {
+    if (this.source === 'merapi') return // pilihan tersimpan untuk sumber lain; Merapi memakai satu model tetap
     await this.q.setModel(model === 'default' ? undefined : model)
     this.model = model === 'default' ? '' : model
     this.setStatus(this.status)
   }
 
   async setEffort(effort: EffortLevel | 'default') {
+    if (this.source === 'merapi') return
     await this.q.applyFlagSettings({ effortLevel: effort === 'default' ? null : effort })
     this.effort = effort === 'default' ? undefined : effort
     this.setStatus(this.status)
@@ -341,13 +403,31 @@ export class Run {
   }
 
   stop() {
+    this.closing = true
     this.inbox.close()
     setTimeout(() => this.q.close(), 5000).unref()
+  }
+
+  // sesi berakhir (menganggur lama atau dihentikan pengguna): ringkas dulu selagi cache masih hangat, lalu tutup
+  compactThenStop() {
+    if (!this.dirty || this.tokens < MIN_COMPACT_TOKENS) return this.stop()
+    this.compacting = true
+    this.closeAfterCompact = true
+    this.lastActivity = Date.now()
+    this.inbox.push({
+      type: 'user',
+      message: { role: 'user', content: '/compact' },
+      parent_tool_use_id: null,
+      origin: { kind: 'human' },
+    } as SDKUserMessage)
+    this.setStatus('running')
   }
 }
 
 const PREFS_FILE = path.join(STATE_DIR, 'models.json')
 const MODELS_FILE = path.join(STATE_DIR, 'models-list.json')
+const SETTINGS_FILE = path.join(STATE_DIR, 'settings.json')
+const DEFAULT_COMPACT_WINDOW = 200_000
 // dipakai sampai ada sesi yang berjalan dan Claude Code melaporkan daftar model aslinya
 const FALLBACK_MODELS: ModelOption[] = [
   { value: 'default', displayName: 'Default', description: 'Ikut pengaturan Claude Code di Bima' },
@@ -399,11 +479,11 @@ async function planFrom(q: Query): Promise<PlanInfo | null> {
 }
 
 // tanpa sesi yang berjalan: buka proses claude sebentar tanpa mengirim pesan (tidak memakai token) untuk membaca kuota
-async function probePlan(): Promise<PlanInfo | null> {
+async function probePlan(source: SourceId): Promise<PlanInfo | null> {
   const inbox = new Inbox()
   const q = query({
     prompt: inbox,
-    options: { cwd: DEFAULT_CWD, pathToClaudeCodeExecutable: CLAUDE_BIN, env: childEnv(), persistSession: false },
+    options: { cwd: DEFAULT_CWD, pathToClaudeCodeExecutable: CLAUDE_BIN, env: childEnv(source), persistSession: false },
   })
   try {
     return await planFrom(q)
@@ -421,20 +501,90 @@ export class Hub {
   private prefs: Record<string, Pref> = loadPrefs()
   private modelList: ModelOption[] = readJson(MODELS_FILE, FALLBACK_MODELS)
   private modelsLearned = false
-  private planCache: { at: number; plan: PlanInfo | null } | null = null
+  plan: PlanInfo | null = null
+  private planAt = 0
+  private planBusy = false
+  private saved: { source: SourceId; compactWindow: number } = {
+    source: 'personal', compactWindow: DEFAULT_COMPACT_WINDOW, ...readJson(SETTINGS_FILE, {}),
+  }
   constructor(events: HubEvents) {
     this.events = events
+    prepareProduk()
     setInterval(() => {
       for (const r of this.runs.values()) {
-        if (r.status === 'idle' && !r.pending.size && Date.now() - r.lastActivity > IDLE_MS) r.stop()
+        if (r.status === 'idle' && !r.pending.size && !r.closing && Date.now() - r.lastActivity > IDLE_MS) r.compactThenStop()
       }
+      if (this.events.appCount()) void this.refreshPlan()
     }, 60_000).unref()
+  }
+
+  settings(): AiSettings {
+    return { ...this.saved, sources: sourceList() }
+  }
+
+  private saveSettings() {
+    writeJson(SETTINGS_FILE, this.saved)
+    this.events.toAll({ t: 'settings', settings: this.settings() })
+  }
+
+  // Sesi yang berjalan memakai sumber lama sampai ditutup; pesan berikutnya membuka proses baru dengan sumber baru.
+  setSource(source: SourceId) {
+    const info = sourceList().find(s => s.id === source)
+    if (!info) throw new Error('Sumber tidak dikenal')
+    if (!info.ready) throw new Error(info.hint)
+    if (source === this.saved.source) return
+    this.saved.source = source
+    this.saveSettings()
+    for (const r of this.runs.values()) if (r.source !== source) this.closeWhenFree(r)
+    this.plan = null
+    this.planAt = 0
+    this.events.toAll({ t: 'plan', plan: null })
+    void this.refreshPlan()
+  }
+
+  setCompactWindow(tokens: number) {
+    if (!COMPACT_WINDOWS.includes(tokens)) throw new Error('Ukuran autocompact tidak dikenal')
+    if (tokens === this.saved.compactWindow) return
+    this.saved.compactWindow = tokens
+    this.saveSettings()
+    // ukuran hanya terbaca saat proses dibuka (applyFlagSettings tidak mengubahnya), jadi proses ditutup dan dibuka lagi
+    // pada pesan berikutnya. Akun dan model tetap sama, jadi cache tetap terpakai.
+    for (const r of this.runs.values()) this.closeWhenFree(r)
+  }
+
+  private closeWhenFree(r: Run) {
+    if (r.status === 'idle' && !r.pending.size) r.stop()
+    else r.stopWhenIdle = true
+  }
+
+  // Kuota sumber aktif untuk angka x% y% di layar. Proses claude sementara mahal dibuka, jadi tanpa sesi berjalan lebih jarang.
+  async refreshPlan() {
+    const source = this.saved.source
+    if (this.planBusy) return
+    if (source === 'merapi' || !sourceReady(source)) {
+      if (this.plan) this.events.toAll({ t: 'plan', plan: (this.plan = null) })
+      return
+    }
+    const run = [...this.runs.values()].find(r => r.source === source && !r.closing)
+    if (Date.now() - this.planAt < (run ? 30_000 : 180_000)) return
+    this.planBusy = true
+    try {
+      const plan = await withTimeout(run ? run.planUsage() : probePlan(source), 30_000)
+      this.planAt = Date.now()
+      if (source !== this.saved.source) return
+      this.plan = plan
+      this.events.toAll({ t: 'plan', plan })
+    } catch {
+      // kuota gagal dibaca: angka terakhir tetap tampil, dicoba lagi pada putaran berikutnya
+    } finally {
+      this.planBusy = false
+    }
   }
 
   register(r: Run) {
     this.fresh.delete(r)
     this.runs.set(r.sessionId, r)
-    if (r.model || r.effort) this.savePref(r.sessionId, { model: r.model || null, effort: r.effort ?? null })
+    if (r.source !== 'merapi' && (r.model || r.effort)) this.savePref(r.sessionId, { model: r.model || null, effort: r.effort ?? null })
   }
 
   pref(id: string): Pref {
@@ -465,7 +615,7 @@ export class Hub {
 
   // daftar model asli dari Claude Code, diambil sekali dari sesi pertama yang berjalan
   learnModels(r: Run) {
-    if (this.modelsLearned) return
+    if (this.modelsLearned || r.source === 'merapi') return
     this.modelsLearned = true
     r.supportedModels()
       .then(list => {
@@ -500,12 +650,23 @@ export class Hub {
   async usage(sessionId?: string): Promise<{ context: ContextInfo | null; plan: PlanInfo | null }> {
     const r = sessionId ? this.runs.get(sessionId) : undefined
     const context = r ? await withTimeout(r.contextUsage(), 20_000).catch(() => null) : null
-    if (!this.planCache || Date.now() - this.planCache.at > 30_000) {
-      const any = r ?? [...this.runs.values()][0]
-      const plan = await withTimeout(any ? any.planUsage() : probePlan(), 30_000).catch(() => null)
-      this.planCache = { at: Date.now(), plan }
-    }
-    return { context, plan: this.planCache.plan }
+    await this.refreshPlan()
+    return { context, plan: this.plan }
+  }
+
+  // sesi berakhir atas permintaan pengguna
+  end(sessionId: string) {
+    const r = this.runs.get(sessionId)
+    if (!r) return
+    if (r.status === 'idle' && !r.pending.size) r.compactThenStop()
+    else r.stop()
+  }
+
+  tokens(sessionId: string): number {
+    const r = this.runs.get(sessionId)
+    if (r?.tokens) return r.tokens
+    const f = findFile(sessionId)
+    return f ? lastContextTokens(f) : 0
   }
 
   remove(r: Run) {
@@ -520,6 +681,13 @@ export class Hub {
     const images = opts.images ?? []
     if (opts.sessionId) {
       const running = this.runs.get(opts.sessionId)
+      if (running?.closing) {
+        running.afterClose(() => {
+          const err = this.send(opts)
+          if (err) this.events.toSubscribers(opts.sessionId!, { t: 'error', ref: opts.ref, sessionId: opts.sessionId, message: err })
+        })
+        return null
+      }
       if (running) {
         running.send(opts.text, images)
         return null
@@ -530,13 +698,19 @@ export class Hub {
       if (!f) return 'Sesi tidak ditemukan'
       const m = meta(f)
       const p = this.pref(f.id)
-      const r = new Run(this, { sessionId: f.id, cwd: realCwd(m.cwd), mode: DEFAULT_MODE, title: m.title, model: p.model, effort: p.effort })
+      const r = new Run(this, {
+        sessionId: f.id, cwd: realCwd(m.cwd), mode: DEFAULT_MODE, title: m.title, model: p.model, effort: p.effort,
+        source: this.saved.source, compactWindow: this.saved.compactWindow, tokens: lastContextTokens(f),
+      })
       this.runs.set(f.id, r)
       r.send(opts.text, images)
       return null
     }
     // sesi baru dari tombol + dibuat di home (~), kecuali aplikasi menyebut folder lain
-    const r = new Run(this, { cwd: realCwd(opts.cwd), mode: DEFAULT_MODE, ref: opts.ref, model: opts.model, effort: opts.effort })
+    const r = new Run(this, {
+      cwd: realCwd(opts.cwd), mode: DEFAULT_MODE, ref: opts.ref, model: opts.model, effort: opts.effort,
+      source: this.saved.source, compactWindow: this.saved.compactWindow,
+    })
     this.fresh.add(r)
     r.send(opts.text, images)
     return null

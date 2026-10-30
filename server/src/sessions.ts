@@ -255,6 +255,38 @@ export function liveElsewhere(): Map<string, number> {
   return live
 }
 
+// Token konteks terakhir sesi yang tidak berjalan: usage panggilan terakhir, atau hasil compact kalau lebih baru
+export function lastContextTokens(f: SessionFile): number {
+  let lines: string[]
+  try {
+    const fd = fs.openSync(f.file, 'r')
+    try {
+      const n = Math.min(f.size, 8 << 20)
+      const buf = Buffer.alloc(n)
+      fs.readSync(fd, buf, 0, n, f.size - n)
+      lines = buf.toString('utf8').split('\n')
+    } finally {
+      fs.closeSync(fd)
+    }
+  } catch {
+    return 0
+  }
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const l = lines[i]
+    if (!l.includes('"compact_boundary"') && !l.includes('"cache_read_input_tokens"')) continue
+    try {
+      const d = JSON.parse(l)
+      if (d.type === 'system' && d.subtype === 'compact_boundary' && d.compactMetadata?.postTokens) return d.compactMetadata.postTokens
+      const u = d.type === 'assistant' && !d.isSidechain ? d.message?.usage : null
+      const total = u ? (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0) : 0
+      if (total) return total
+    } catch {
+      // baris pertama di jendela bisa terpotong
+    }
+  }
+  return 0
+}
+
 // ---------- riwayat percakapan ----------
 
 const clip = (s: string, n: number) => (s.length > n ? s.slice(0, n) + `… (+${s.length - n} karakter)` : s)
