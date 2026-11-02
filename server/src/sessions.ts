@@ -1,4 +1,5 @@
 import fs from 'node:fs'
+import readline from 'node:readline'
 import path from 'node:path'
 import { LIVE_DIR, PROJECTS_DIR, STATE_DIR } from './config.ts'
 import type { ChatItem, HistoryPage } from '../../shared/protocol.ts'
@@ -90,6 +91,29 @@ export function deleteSessionFiles(f: SessionFile) {
 export function findFile(id: string): SessionFile | undefined {
   if (!UUID.test(id)) return undefined
   return listFiles().find(f => f.id === id)
+}
+
+// Gambar yang diunggah ke satu pesan user (base64 di JSONL), dicari lewat uuid barisnya
+export async function userImages(f: SessionFile, uuid: string): Promise<{ mediaType: string; data: string }[]> {
+  if (!UUID.test(uuid)) return []
+  const rl = readline.createInterface({ input: fs.createReadStream(f.file, { encoding: 'utf8' }), crlfDelay: Infinity })
+  try {
+    for await (const line of rl) {
+      if (!line.includes(uuid) || !line.includes('"type":"image"')) continue
+      try {
+        const d = JSON.parse(line)
+        if (d.uuid !== uuid || d.type !== 'user' || !Array.isArray(d.message?.content)) continue
+        return d.message.content
+          .filter((b: any) => b?.type === 'image' && b.source?.type === 'base64' && /^image\/(png|jpeg|webp|gif)$/.test(b.source.media_type))
+          .map((b: any) => ({ mediaType: b.source.media_type as string, data: b.source.data as string }))
+      } catch {
+        // baris rusak: lanjut
+      }
+    }
+    return []
+  } finally {
+    rl.close()
+  }
 }
 
 function readHead(file: string, bytes = 256 * 1024): string {

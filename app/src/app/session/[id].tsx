@@ -1,12 +1,14 @@
 import * as Clipboard from 'expo-clipboard'
-import { router, useLocalSearchParams } from 'expo-router'
-import { useEffect, useMemo, useState } from 'react'
-import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native'
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { ActivityIndicator, BackHandler, FlatList, Pressable, StyleSheet, Text, View } from 'react-native'
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import type { ChatItem } from '../../../../shared/protocol'
 import { AttachSheet, useAttachments } from '../../components/Attachments'
 import ChatRow from '../../components/ChatRow'
+import { FileViewerProvider } from '../../components/FileViewer'
+import SessionBadges, { CompactBar } from '../../components/SessionBadges'
 import Composer from '../../components/Composer'
 import Icon, { ContextRing } from '../../components/Icon'
 import Markdown from '../../components/Markdown'
@@ -18,6 +20,8 @@ import UsageSheet from '../../components/UsageSheet'
 import { useClient } from '../../lib/client'
 import { COLUMN, useWide } from '../../lib/layout'
 import { MODES, STATUS, liveLine } from '../../lib/format'
+import { modelsFor } from '../../lib/models'
+import { browserActive } from '../../lib/tools'
 import { C } from '../../lib/theme'
 
 type Tool = Extract<ChatItem, { k: 'tool' }>
@@ -52,7 +56,23 @@ export default function SessionScreen() {
   const [menu, setMenu] = useState(false)
   const [modelOpen, setModelOpen] = useState(false)
   const [usageOpen, setUsageOpen] = useState(false)
+  const [switchTo, setSwitchTo] = useState<string | null>(null) // model yang menunggu konfirmasi ganti saat Claude bekerja
   const att = useAttachments()
+  // dibuka dari notifikasi atau tautan: tidak ada layar sebelumnya, jadi kembali ke daftar sesi, bukan keluar aplikasi
+  const goBack = useCallback(() => {
+    if (router.canGoBack()) router.back()
+    else router.replace('/')
+  }, [])
+  useFocusEffect(
+    useCallback(() => {
+      if (wide) return
+      const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+        goBack()
+        return true
+      })
+      return () => sub.remove()
+    }, [wide, goBack]),
+  )
 
   useEffect(() => {
     if (!id) return
@@ -98,10 +118,11 @@ export default function SessionScreen() {
   }
 
   return (
+    <FileViewerProvider cwd={summary?.cwd}>
     <KeyboardAvoidingView behavior="padding" style={{ flex: 1, backgroundColor: C.bg }}>
       <View style={[s.header, { paddingTop: insets.top + 6 }]}>
         {wide ? null : (
-          <Pressable onPress={() => router.back()} hitSlop={12} style={s.back}>
+          <Pressable onPress={goBack} hitSlop={12} style={s.back}>
             <Icon name="back" size={24} />
           </Pressable>
         )}
@@ -131,7 +152,7 @@ export default function SessionScreen() {
         data={nodes}
         keyExtractor={n => (n.kind === 'tools' ? n.tools[0].id : n.item.id)}
         renderItem={({ item: node }) =>
-          node.kind === 'tools' ? <ToolGroup tools={node.tools} results={results} running={busy} /> : <ChatRow item={node.item} />
+          node.kind === 'tools' ? <ToolGroup tools={node.tools} results={results} running={busy} /> : <ChatRow item={node.item} sessionId={id} />
         }
         onEndReached={() => id && c.loadHistory(id, true)}
         onEndReachedThreshold={0.4}
@@ -155,6 +176,8 @@ export default function SessionScreen() {
       />
 
       <View style={[{ paddingBottom: insets.bottom + 8, paddingTop: 6 }, wide && COLUMN]}>
+        {run?.compactingSince ? <CompactBar since={run.compactingSince} /> : null}
+        <SessionBadges sessionId={id} browser={status !== 'closed' && browserActive(items)} shells={run?.shells ?? []} />
         <Composer
           value={text}
           onChangeText={setText}
@@ -178,10 +201,10 @@ export default function SessionScreen() {
       <ModelSheet
         visible={modelOpen}
         onClose={() => setModelOpen(false)}
-        models={c.models}
+        models={modelsFor(c.models, run?.source ?? c.settings?.source)}
         model={run?.model}
         effort={run?.effort}
-        onModel={v => c.setModel(id, v)}
+        onModel={v => (busy && v !== (run?.model ?? 'default') ? setSwitchTo(v) : c.setModel(id, v))}
         onEffort={v => c.setEffort(id, v)}
       />
 
@@ -191,8 +214,17 @@ export default function SessionScreen() {
         usage={usage}
         loading={c.usageLoading}
         running={busy}
-        onRefresh={() => c.requestUsage(id)}
+        sessionId={id}
+        onRefresh={() => c.requestUsage(id, c.sourceOf(id))}
       />
+
+      <Sheet visible={switchTo !== null} onClose={() => setSwitchTo(null)} title="Ganti model saat Claude bekerja?">
+        <Text style={s.hint}>Berpindah model saat eksekusi sedang berjalan tidak disarankan: jawaban yang sedang dibuat bisa terputus dan konteks ditulis ulang ke cache.</Text>
+        <Group>
+          <Row first title="Tetap ganti" onPress={() => { if (switchTo) c.setModel(id, switchTo); setSwitchTo(null) }} />
+          <Row last title="Batal" onPress={() => setSwitchTo(null)} />
+        </Group>
+      </Sheet>
 
       <Sheet visible={menu} onClose={() => setMenu(false)} title="Sesi">
         <SectionLabel>Mode izin</SectionLabel>
@@ -220,6 +252,7 @@ export default function SessionScreen() {
         </Group>
       </Sheet>
     </KeyboardAvoidingView>
+    </FileViewerProvider>
   )
 }
 

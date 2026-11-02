@@ -3,7 +3,9 @@ import { useEffect, useState } from 'react'
 import type { EffortLevel } from '../../../shared/protocol'
 import { useClient } from '../lib/client'
 import { shortPath } from '../lib/format'
+import { modelsFor } from '../lib/models'
 import Composer from './Composer'
+import SessionTools from './SessionTools'
 import { I, Popover, setUI, useUI } from './ui'
 import { useAttach, useDrop } from './useAttach'
 
@@ -87,7 +89,7 @@ export default function Welcome() {
             placeholder="Tulis pesan pertama untuk Claude"
             autoFocus
             drag={drag}
-            models={c.models}
+            models={modelsFor(c.models, c.settings?.source)}
             model={model}
             effort={effort}
             onModel={setModel}
@@ -96,7 +98,7 @@ export default function Welcome() {
             attachBusy={att.busy}
             onFiles={att.add}
             onRemoveAttach={att.remove}
-            extra={folder}
+            extra={<>{folder}<SessionTools /></>}
           />
           <div className="iv-hint">{busy ? 'Memulai sesi…' : 'Enter kirim · Shift+Enter baris baru · Ctrl+V tempel gambar'}</div>
         </div>

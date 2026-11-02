@@ -29,6 +29,9 @@ export type ChatItem =
   | { k: 'tool_result'; id: string; ts: string; toolUseId: string; text: string; isError: boolean }
   | { k: 'system'; id: string; ts: string; text: string }
 
+// shell latar belakang (Bash run_in_background, Monitor) yang masih hidup di sesi
+export interface ShellTask { id: string; type: string; description: string }
+
 export interface HistoryPage {
   items: ChatItem[]
   before: number | null // offset byte untuk halaman yang lebih lama, null kalau sudah di awal
@@ -58,6 +61,8 @@ export interface ModelOption {
   description: string
   supportsEffort?: boolean
   efforts?: EffortLevel[]
+  source?: SourceId // model milik gateway tertentu; kosong = model Claude Code biasa
+  more?: boolean // tampil di bawah "Versi lain"
 }
 
 // isi jendela konteks per kategori (sama dengan /context di terminal)
@@ -99,8 +104,8 @@ export type ClientMessage =
   | { t: 'model'; sessionId: string; model: string } // 'default' = ikut pengaturan Claude Code
   | { t: 'effort'; sessionId: string; effort: EffortLevel | 'default' }
   | { t: 'models' }
-  | { t: 'usage'; sessionId?: string }
-  | { t: 'setSource'; source: SourceId }
+  | { t: 'usage'; sessionId?: string; source?: SourceId } // source: kuota sumber itu saja (lihat tanpa berpindah)
+  | { t: 'setSource'; source: SourceId; sessionId?: string }
   | { t: 'deleteSessions'; ids: string[] }
   | { t: 'setCompactWindow'; tokens: number }
   | { t: 'answer'; answer: Answer }
@@ -115,9 +120,10 @@ export type ServerMessage =
   | {
       t: 'status'; sessionId: string; status: SessionStatus; mode?: PermissionMode; pending: PendingRequest[]; seq?: number
       model?: string; effort?: EffortLevel
+      source?: SourceId; shells?: ShellTask[]; compactingSince?: number // compactingSince: ms epoch saat compact dimulai, kosong kalau tidak sedang compact
     }
   | { t: 'models'; models: ModelOption[] }
-  | { t: 'usage'; sessionId?: string; context: ContextInfo | null; plan: PlanInfo | null }
+  | { t: 'usage'; sessionId?: string; source?: SourceId; context: ContextInfo | null; plan: PlanInfo | null }
   | { t: 'settings'; settings: AiSettings }
   | { t: 'sessionsDeleted'; deleted: string[]; skipped: { id: string; reason: string }[] }
   | { t: 'plan'; plan: PlanInfo | null } // kuota sumber aktif, disiarkan berkala
@@ -129,3 +135,24 @@ export type ServerMessage =
   | { t: 'notify'; id: string; sessionId: string; title: string; body: string; kind: 'done' | 'request' | 'error' }
   | { t: 'error'; ref?: string; sessionId?: string; message: string }
   | { t: 'pong' }
+
+// ---------- browser bersama (halaman /browser, WebSocket /ws/browser) ----------
+// Frame layar dikirim sebagai pesan biner (JPEG utuh); selebihnya pesan JSON di bawah ini.
+
+export interface BrowserTab { id: string; title: string; url: string; active: boolean }
+
+export type BrowserServerMsg =
+  | { t: 'status'; state: 'off' | 'starting' | 'ready' | 'error'; message: string }
+  | { t: 'tabs'; tabs: BrowserTab[]; current: string | null; pinned: boolean }
+  | { t: 'meta'; w: number; h: number } // ukuran viewport dalam piksel CSS, untuk memetakan klik
+
+export type BrowserClientMsg =
+  | { t: 'mouse'; type: 'mousePressed' | 'mouseReleased' | 'mouseMoved' | 'wheel'; x: number; y: number; button?: 'none' | 'left' | 'middle' | 'right'; buttons?: number; clicks?: number; dx?: number; dy?: number; mod?: number }
+  | { t: 'key'; type: 'keyDown' | 'rawKeyDown' | 'keyUp' | 'char'; key: string; code: string; text?: string; vk?: number; mod?: number; repeat?: boolean; commands?: string[] }
+  | { t: 'text'; text: string }
+  | { t: 'nav'; url: string }
+  | { t: 'history'; dir: 'back' | 'forward' }
+  | { t: 'reload' }
+  | { t: 'select'; id: string | null } // null = ikuti tab yang sedang dipakai
+  | { t: 'newtab'; url?: string }
+  | { t: 'closetab'; id: string }

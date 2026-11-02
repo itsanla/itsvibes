@@ -45,8 +45,8 @@ export default function ModelSheet({ visible, onClose, models, model, effort, on
 }) {
   const [page, setPage] = useState<'models' | 'effort'>('models')
   const list = models.length ? models : FALLBACK
-  const main = list.filter(m => !m.value.startsWith('claude-'))
-  const versions = list.filter(m => m.value.startsWith('claude-'))
+  const main = list.filter(m => !m.more && !m.value.startsWith('claude-'))
+  const versions = list.filter(m => m.more || m.value.startsWith('claude-'))
   const current = list.some(m => m.value === model) ? model : 'default'
   const chosen = list.find(m => m.value === current)
   const levels = chosen?.efforts?.length ? EFFORTS.filter(e => chosen.efforts!.includes(e.value)) : EFFORTS
@@ -97,7 +97,7 @@ export default function ModelSheet({ visible, onClose, models, model, effort, on
       ) : null}
       {versions.length ? (
         <>
-          <SectionLabel>Model lainnya</SectionLabel>
+          <SectionLabel>{list.some(m => m.source === 'merapi') ? 'Versi lain' : 'Model lainnya'}</SectionLabel>
           <Group>{rows(versions)}</Group>
         </>
       ) : null}

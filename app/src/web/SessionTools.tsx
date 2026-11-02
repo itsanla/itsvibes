@@ -2,17 +2,17 @@ import { useClient } from '../lib/client'
 import { MODES, liveLine } from '../lib/format'
 import { I, Popover, copyText, setUI } from './ui'
 
-// Kendali sesi di sidebar, di bawah pencarian: mode izin, angka penggunaan, dan menu lainnya
+// Kendali sesi di kolom ketik, di sebelah pilihan model: mode izin, angka penggunaan (buka drawer), dan menu lainnya
 export default function SessionTools({ id }: { id?: string }) {
   const c = useClient()
   const run = id ? c.runs.get(id) : undefined
   const mode = MODES.find(m => m.mode === run?.mode)
   const active = !!run && run.status !== 'closed'
   return (
-    <div className="iv-side-tools">
+    <>
       {id ? (
         <Popover
-          dir="down"
+          dir="up"
           trigger={(_, toggle) => (
             <button className="iv-chip" onClick={toggle} title="Mode izin"><span>{mode?.label ?? 'Mode izin'}</span><I n="chevronDown" s={14} /></button>
           )}
@@ -30,12 +30,12 @@ export default function SessionTools({ id }: { id?: string }) {
           )}
         </Popover>
       ) : null}
-      <button className="iv-chip grow" onClick={() => setUI({ panelOpen: true })} title="Kuota 5 jam, kuota mingguan, token konteks (Ctrl+\)">
+      <button className="iv-chip tab" onClick={() => setUI({ panelOpen: true })} title="Kuota 5 jam, kuota mingguan, token konteks (Ctrl+\)">
         <span>{liveLine(c.plan, id ? c.tokens.get(id) : undefined) || 'Penggunaan'}</span>
       </button>
       {id ? (
         <Popover
-          dir="down"
+          dir="up"
           trigger={(_, toggle) => <button className="iv-icon-btn" onClick={toggle} title="Lainnya"><I n="dots" /></button>}
         >
           {close => (
@@ -48,6 +48,6 @@ export default function SessionTools({ id }: { id?: string }) {
           )}
         </Popover>
       ) : null}
-    </div>
+    </>
   )
 }

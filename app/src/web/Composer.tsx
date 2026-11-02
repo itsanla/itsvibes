@@ -1,5 +1,5 @@
 import { type ReactNode, useLayoutEffect, useRef } from 'react'
-import type { Attachment } from '../lib/images'
+import { type Attachment, DOC_ACCEPT } from '../lib/images'
 import ModelChip from './ModelChip'
 import { I } from './ui'
 import type { EffortLevel, ModelOption } from '../../../shared/protocol'
@@ -43,7 +43,7 @@ export default function Composer(p: {
         <div className="iv-attach-row">
           {p.attach.map(a => (
             <div key={a.uri} className="iv-thumb">
-              <img src={a.uri} alt="" />
+              {a.doc ? <span className="iv-doc"><I n="paperclip" s={14} />{a.doc.name}</span> : <img src={a.uri} alt="" />}
               <button onClick={() => p.onRemoveAttach(a.uri)} aria-label="Hapus lampiran"><I n="close" s={12} w={2.4} c="#1a1a1a" /></button>
             </div>
           ))}
@@ -67,13 +67,13 @@ export default function Composer(p: {
         }}
       />
       <div className="iv-compose-bar">
-        <button className="iv-icon-btn" title="Lampirkan gambar" onClick={() => file.current?.click()} disabled={p.attachBusy}>
+        <button className="iv-icon-btn" title="Lampirkan gambar atau berkas" onClick={() => file.current?.click()} disabled={p.attachBusy}>
           {p.attachBusy ? <span className="iv-spin" /> : <I n="paperclip" />}
         </button>
         <input
           ref={file}
           type="file"
-          accept="image/*"
+          accept={`image/*,${DOC_ACCEPT}`}
           multiple
           hidden
           onChange={e => {

@@ -7,6 +7,7 @@ import type { EffortLevel } from '../../../shared/protocol'
 import { AttachSheet, useAttachments } from '../components/Attachments'
 import Composer from '../components/Composer'
 import ModelSheet, { modelLabel } from '../components/ModelSheet'
+import { modelsFor } from '../lib/models'
 import { useClient } from '../lib/client'
 import { COLUMN, useWide } from '../lib/layout'
 import { C } from '../lib/theme'
@@ -69,7 +70,7 @@ export default function NewSession() {
       <ModelSheet
         visible={modelOpen}
         onClose={() => setModelOpen(false)}
-        models={c.models}
+        models={modelsFor(c.models, c.settings?.source)}
         model={model}
         effort={effort}
         onModel={setModel}

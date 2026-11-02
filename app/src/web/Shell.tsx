@@ -63,6 +63,8 @@ export default function Shell({ children }: { children: ReactNode }) {
   }, [title])
 
   const toast = c.toast
+  // layar browser dibuka di tab sendiri: tanpa sidebar
+  if (path === '/browser') return <><style>{CSS}</style>{c.ready ? children : <div className="iv-center">Memuat…</div>}</>
   return (
     <>
       <style>{CSS}</style>

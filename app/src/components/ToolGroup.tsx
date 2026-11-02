@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native'
 import type { ChatItem } from '../../../shared/protocol'
 import { C, mono } from '../lib/theme'
+import { LinkedText } from './FileViewer'
 import Icon from './Icon'
 import Sheet from './Sheet'
 
@@ -73,8 +74,8 @@ function Step({ t, r, last, running }: { t: Tool; r?: Result; last: boolean; run
         </View>
         {open ? (
           <>
-            <Text selectable style={s.code}>{t.detail ?? t.input}</Text>
-            {r ? <Text selectable style={[s.code, r.isError && { color: C.err }]}>{r.text || '(tanpa keluaran)'}</Text> : null}
+            <LinkedText text={t.detail ?? t.input} style={s.code} />
+            {r ? <LinkedText text={r.text || '(tanpa keluaran)'} style={[s.code, r.isError && { color: C.err }]} /> : null}
           </>
         ) : null}
       </Pressable>

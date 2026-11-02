@@ -70,6 +70,10 @@ const PATHS: Record<string, string[]> = {
   trash: ['M4 7h16', 'M9 7V4h6v3', 'M6 7l1 13h10l1-13', 'M10 11v5', 'M14 11v5'],
   list: ['M9 6h11', 'M9 12h11', 'M9 18h11', 'M4.5 6h.01', 'M4.5 12h.01', 'M4.5 18h.01'],
   gear: ['M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z', 'M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z'],
+  arrowLeft: ['M19 12H5', 'M11 6l-6 6 6 6'],
+  arrowRight: ['M5 12h14', 'M13 6l6 6-6 6'],
+  external: ['M14 4h6v6', 'M20 4l-9 9', 'M18 14v6H4V6h6'],
+  keyboard: ['M3 6h18v12H3z', 'M7 10h.01', 'M11 10h.01', 'M15 10h.01', 'M7 14h10'],
   dots: [],
   stop: [],
 }
@@ -140,6 +144,41 @@ export function Dialog({ title, onClose, children, width }: { title: string; onC
         </div>
         <div className="iv-dialog-body">{children}</div>
       </div>
+    </div>
+  )
+}
+
+// Drawer dari kanan ke kiri (pola Drawer di alursekolah-app): masuk 420 ms, keluar 240 ms, latar memudar, Esc dan klik latar menutup
+export function Drawer({ title, sub, onClose, children, wide }: { title: string; sub?: string; onClose: () => void; children: ReactNode; wide?: boolean }) {
+  const [out, setOut] = useState(false)
+  const close = () => {
+    if (out) return
+    setOut(true)
+    setTimeout(onClose, 240)
+  }
+  const closeRef = useRef(close)
+  useEffect(() => {
+    closeRef.current = close
+  })
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeRef.current()
+    }
+    document.addEventListener('keydown', key)
+    return () => document.removeEventListener('keydown', key)
+  }, [])
+  return (
+    <div className={`iv-drawer-scrim${out ? ' out' : ''}`} onMouseDown={e => e.target === e.currentTarget && close()}>
+      <aside className={`iv-drawer${wide ? ' wide' : ''}`} role="dialog" aria-label={title}>
+        <div className="iv-drawer-head">
+          <div style={{ minWidth: 0 }}>
+            <h3>{title}</h3>
+            {sub ? <small>{sub}</small> : null}
+          </div>
+          <button className="iv-icon-btn" onClick={close} aria-label="Tutup"><I n="close" /></button>
+        </div>
+        <div className="iv-drawer-body">{children}</div>
+      </aside>
     </div>
   )
 }

@@ -2,18 +2,32 @@ import crypto from 'node:crypto'
 import fs from 'node:fs'
 import http from 'node:http'
 import path from 'node:path'
+import os from 'node:os'
 import zlib from 'node:zlib'
 import { WebSocket, WebSocketServer } from 'ws'
 import { bearer, checkToken, createPairCode, redeemPairCode } from './auth.ts'
-import { APK_DIR, DEFAULT_CWD, HOST, PORT, VERSION, WEB_DIR } from './config.ts'
+import { GatewayError, gatewayCredentials, gatewaySources, importCredentials, startKeepalive } from './gateway.ts'
+import { BrowserHost, type Viewer } from './browser.ts'
+import { APK_DIR, BROWSER_ENABLED, DEFAULT_CWD, HOST, PORT, VERSION, WEB_DIR } from './config.ts'
 import { Hub } from './runner.ts'
-import { findFile, history, isAutomated, listFiles, liveElsewhere, meta } from './sessions.ts'
+import { findFile, history, userImages, isAutomated, listFiles, liveElsewhere, meta } from './sessions.ts'
 import { PROTOCOL_VERSION } from '../../shared/protocol.ts'
-import type { ClientMessage, ServerMessage, SessionSummary } from '../../shared/protocol.ts'
+import type { BrowserClientMsg, ClientMessage, ServerMessage, SessionSummary } from '../../shared/protocol.ts'
 
 if (process.argv[2] === 'pair') {
   console.log(`Kode pairing itsvibes: ${createPairCode()} (berlaku 10 menit, maksimal 5 kali salah)`)
   process.exit(0)
+}
+
+if (process.argv[2] === 'gateway-import') {
+  const [id, file, ...flags] = process.argv.slice(3)
+  try {
+    console.log(importCredentials(String(id), String(file), flags.includes('--force')))
+    process.exit(0)
+  } catch (e) {
+    console.error(`Gagal: ${(e as Error).message}\nPakai: node src/index.ts gateway-import <personal|produk> <.credentials.json> [--force]`)
+    process.exit(1)
+  }
 }
 
 interface Conn { ws: WebSocket; role: 'app' | 'notifier'; subs: Set<string>; focus: string | null; visible: boolean; alive: boolean }
@@ -22,6 +36,8 @@ const conns = new Set<Conn>()
 function sendTo(c: Conn, msg: ServerMessage) {
   if (c.ws.readyState === WebSocket.OPEN) c.ws.send(JSON.stringify(msg))
 }
+
+export const browser = new BrowserHost()
 
 const hub = new Hub({
   toSubscribers(sessionId, msg) {
@@ -98,6 +114,65 @@ async function body(req: http.IncomingMessage): Promise<any> {
   return raw ? JSON.parse(raw) : {}
 }
 
+const FILE_TYPES: Record<string, string> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.pdf': 'application/pdf' }
+const FILE_MAX = 40 * 1024 * 1024
+
+// Berkas dokumen (pdf, xlsx, docx, pptx, dll) disimpan di ~/uploads/<tanggal>-<acak>/ dan Claude membacanya lewat path
+const UPLOAD_MAX = 50 * 1024 * 1024
+async function receiveUpload(req: http.IncomingMessage, url: URL, res: http.ServerResponse) {
+  if (req.method !== 'POST') return json(res, 405, { error: 'Gunakan POST' })
+  const name = path.basename(url.searchParams.get('name') ?? '').replace(/[^\p{L}\p{N}._ -]/gu, '_').replace(/^\.+/, '').slice(0, 120)
+  if (!name) return json(res, 400, { error: 'Nama berkas kosong' })
+  const dir = path.join(os.homedir(), 'uploads', `${new Date().toISOString().slice(0, 10)}-${crypto.randomBytes(3).toString('hex')}`)
+  fs.mkdirSync(dir, { recursive: true })
+  const file = path.join(dir, name)
+  let size = 0
+  try {
+    const out = fs.createWriteStream(file)
+    for await (const chunk of req) {
+      size += chunk.length
+      if (size > UPLOAD_MAX) throw new Error('Berkas terlalu besar (maksimal 50 MB)')
+      if (!out.write(chunk)) await new Promise(r => out.once('drain', r))
+    }
+    await new Promise<void>((r, j) => out.end((e?: Error | null) => (e ? j(e) : r())))
+  } catch (e) {
+    fs.rmSync(dir, { recursive: true, force: true })
+    return json(res, 413, { error: e instanceof Error ? e.message : String(e) })
+  }
+  return json(res, 200, { path: file, name, size })
+}
+
+// hanya gambar/PDF di folder yang diizinkan; path diselesaikan dulu (realpath) supaya ../ dan symlink tidak lolos
+function sendFile(req: http.IncomingMessage, url: URL, res: http.ServerResponse) {
+  const home = os.homedir()
+  const roots = [home, '/Data_A/project', '/tmp'].flatMap(r => {
+    try {
+      return [fs.realpathSync(r)]
+    } catch {
+      return []
+    }
+  })
+  let raw = url.searchParams.get('path') ?? ''
+  const cwd = url.searchParams.get('cwd') ?? ''
+  if (raw === '~' || raw.startsWith('~/')) raw = path.join(home, raw.slice(1))
+  else if (!path.isAbsolute(raw)) raw = path.resolve(path.isAbsolute(cwd) ? cwd : home, raw)
+  const type = FILE_TYPES[path.extname(raw).toLowerCase()]
+  if (!type) return json(res, 400, { error: 'Hanya png, jpg, jpeg, webp, dan pdf yang bisa dipratinjau' })
+  let real: string
+  try {
+    real = fs.realpathSync(raw)
+  } catch {
+    return json(res, 404, { error: 'Berkas tidak ditemukan: ' + raw })
+  }
+  if (!roots.some(r => real === r || real.startsWith(r + path.sep))) return json(res, 403, { error: 'Folder ini tidak diizinkan untuk pratinjau' })
+  const st = fs.statSync(real)
+  if (!st.isFile()) return json(res, 404, { error: 'Bukan berkas' })
+  if (st.size > FILE_MAX) return json(res, 413, { error: 'Berkas terlalu besar (maks 40 MB)' })
+  res.writeHead(200, { 'content-type': type, 'content-length': st.size, 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'x-file-name': encodeURIComponent(path.basename(real)) })
+  if (req.method === 'HEAD') return res.end()
+  fs.createReadStream(real).pipe(res)
+}
+
 const authed = (req: http.IncomingMessage, url: URL) => checkToken(bearer(req.headers.authorization) ?? url.searchParams.get('token'))
 
 const server = http.createServer(async (req, res) => {
@@ -120,9 +195,37 @@ const server = http.createServer(async (req, res) => {
         return json(res, 401, { error: 'Token tidak berlaku, pasangkan ulang perangkat' })
       }
       if (url.pathname === '/api/sessions') return json(res, 200, summaries(url.searchParams.get('automated') === '1'))
+      if (url.pathname === '/api/upload') return receiveUpload(req, url, res)
       if (url.pathname === '/api/cwds') return json(res, 200, cwds())
+      // jepretan kecil layar browser untuk kartu di halaman sesi
+      if (url.pathname === '/api/browser/snapshot') {
+        const jpeg = BROWSER_ENABLED ? await browser.snapshot() : null
+        if (!jpeg) return json(res, 503, { error: 'Browser belum siap' })
+        res.writeHead(200, { 'content-type': 'image/jpeg', 'cache-control': 'no-store', 'content-length': jpeg.length })
+        return res.end(jpeg)
+      }
+      // berkas gambar/PDF yang disebut Claude, untuk pratinjau di drawer
+      if (url.pathname === '/api/file') return sendFile(req, url, res)
       // perangkat yang sudah terpasang boleh membuat kode untuk perangkat lain (browser baru), tanpa SSH ke Bima
       if (url.pathname === '/api/pair-code' && req.method === 'POST') return json(res, 200, { code: createPairCode() })
+      // gateway kredensial untuk bclaude: hanya lewat header Authorization (token di URL ikut tercatat di log proxy)
+      if (url.pathname.startsWith('/api/gateway/') && req.method === 'GET') {
+        if (!bearer(req.headers.authorization)) return json(res, 401, { error: 'Pakai header Authorization: Bearer' })
+        if (url.pathname === '/api/gateway/sources') return json(res, 200, gatewaySources())
+        if (url.pathname === '/api/gateway/credentials') {
+          try {
+            return json(res, 200, await gatewayCredentials(url.searchParams.get('source')))
+          } catch (e) {
+            return json(res, e instanceof GatewayError ? e.status : 500, { error: (e as Error).message })
+          }
+        }
+      }
+      const mi = /^\/api\/sessions\/([0-9a-f-]{36})\/images$/.exec(url.pathname)
+      if (mi) {
+        const f = findFile(mi[1])
+        if (!f) return json(res, 404, { error: 'Sesi tidak ditemukan' })
+        return json(res, 200, await userImages(f, url.searchParams.get('uuid') ?? ''))
+      }
       const m = /^\/api\/sessions\/([0-9a-f-]{36})\/history$/.exec(url.pathname)
       if (m) {
         const f = findFile(m[1])
@@ -226,6 +329,7 @@ ${files.map(f => `<p><a style="color:#8ab4ff;font-size:18px" href="/download/${e
 
 // pesan berisi foto dari HP bisa beberapa MB
 const wss = new WebSocketServer({ noServer: true, maxPayload: 40 << 20 })
+const browserWss = new WebSocketServer({ noServer: true, maxPayload: 1 << 20, perMessageDeflate: false })
 
 const IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
 function badImages(images: unknown): string | null {
@@ -240,6 +344,31 @@ function badImages(images: unknown): string | null {
 
 server.on('upgrade', (req, socket, head) => {
   const url = new URL(req.url ?? '/', 'http://x')
+  if (url.pathname === '/ws/browser' && BROWSER_ENABLED && authed(req, url)) {
+    browserWss.handleUpgrade(req, socket, head, ws => {
+      let alive = true
+      const viewer: Viewer = {
+        json: msg => ws.readyState === WebSocket.OPEN && ws.send(JSON.stringify(msg)),
+        // frame lama dibuang kalau penonton lambat, supaya tampilan tidak tertinggal
+        frame: jpeg => ws.readyState === WebSocket.OPEN && ws.bufferedAmount < 2_000_000 && ws.send(jpeg, { binary: true }),
+      }
+      const beat = setInterval(() => (alive ? ((alive = false), ws.ping()) : ws.terminate()), 20_000)
+      ws.on('pong', () => (alive = true))
+      ws.on('close', () => {
+        clearInterval(beat)
+        browser.removeViewer(viewer)
+      })
+      ws.on('message', raw => {
+        try {
+          void browser.input(viewer, JSON.parse(String(raw)) as BrowserClientMsg)
+        } catch {
+          // pesan rusak diabaikan
+        }
+      })
+      void browser.addViewer(viewer)
+    })
+    return
+  }
   if (url.pathname !== '/ws' || !authed(req, url)) {
     socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n')
     socket.destroy()
@@ -323,11 +452,14 @@ async function onMessage(c: Conn, m: ClientMessage) {
       return
     }
     case 'usage': {
-      const u = await hub.usage(m.sessionId)
-      return sendTo(c, { t: 'usage', sessionId: m.sessionId, context: u.context, plan: u.plan })
+      const u = await hub.usage(m.sessionId, m.source)
+      return sendTo(c, { t: 'usage', sessionId: m.sessionId, source: m.source, context: u.context, plan: u.plan })
     }
-    case 'setSource':
-      return hub.setSource(m.source)
+    case 'setSource': {
+      const st = hub.setSource(m.source, m.sessionId)
+      if (st) for (const x of conns) if (x.role === 'app') sendTo(x, st)
+      return
+    }
     case 'setCompactWindow':
       return hub.setCompactWindow(m.tokens)
     case 'deleteSessions': {
@@ -363,6 +495,9 @@ setInterval(() => {
 
 server.listen(PORT, HOST, () => {
   console.log(`itsvibes-server ${VERSION} di http://${HOST}:${PORT}`)
+  startKeepalive()
+  // Chromium dinyalakan sejak awal supaya Playwright MCP milik sesi Claude langsung menemukan port CDP-nya
+  if (BROWSER_ENABLED && browser.available) void browser.start()
   // hangatkan cache judul supaya daftar sesi pertama tidak lambat
   setTimeout(() => {
     const t = Date.now()
@@ -374,7 +509,8 @@ server.listen(PORT, HOST, () => {
 for (const sig of ['SIGTERM', 'SIGINT'] as const) {
   process.on(sig, () => {
     for (const r of hub.runs.values()) r.stop()
+    void browser.stop()
     server.close()
-    setTimeout(() => process.exit(0), 1500).unref()
+    setTimeout(() => process.exit(0), 5000).unref()
   })
 }

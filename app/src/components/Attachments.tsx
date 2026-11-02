@@ -1,8 +1,8 @@
 import { useFocusEffect } from 'expo-router'
 import { useCallback, useState } from 'react'
-import { ActivityIndicator, Image, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native'
+import { ActivityIndicator, Image, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { client } from '../lib/client'
-import { type Attachment, MAX_IMAGES, attachFile, pickImages } from '../lib/images'
+import { type Attachment, MAX_IMAGES, attachFile, pickDocs, pickImages } from '../lib/images'
 import { C } from '../lib/theme'
 import Icon from './Icon'
 import Sheet, { Group, Row } from './Sheet'
@@ -12,10 +12,10 @@ export function useAttachments() {
   const [busy, setBusy] = useState(false)
   const [picker, setPicker] = useState(false)
 
-  const pick = (source: 'library' | 'camera') => {
+  const pick = (source: 'library' | 'camera' | 'file') => {
     setPicker(false)
     setBusy(true)
-    pickImages(source, MAX_IMAGES - items.length)
+    ;(source === 'file' ? pickDocs(MAX_IMAGES - items.length) : pickImages(source, MAX_IMAGES - items.length))
       .then(added => setItems(cur => [...cur, ...added].slice(0, MAX_IMAGES)))
       .catch(e => client.showToast(e instanceof Error ? e.message : String(e)))
       .finally(() => setBusy(false))
@@ -67,7 +67,14 @@ export function AttachPreview({ items, onRemove }: { items: Attachment[]; onRemo
     <ScrollView horizontal style={s.row} contentContainerStyle={{ gap: 8, paddingHorizontal: 6 }} keyboardShouldPersistTaps="handled">
       {items.map(i => (
         <View key={i.uri}>
-          <Image source={{ uri: i.uri }} style={s.thumb} />
+          {i.doc ? (
+            <View style={[s.thumb, s.doc]}>
+              <Icon name="file" size={20} color={C.dim} />
+              <Text style={s.docName} numberOfLines={2}>{i.doc.name}</Text>
+            </View>
+          ) : (
+            <Image source={{ uri: i.uri }} style={s.thumb} />
+          )}
           <Pressable style={s.remove} onPress={() => onRemove(i.uri)} hitSlop={8}>
             <Icon name="close" size={12} color={C.bg} />
           </Pressable>
@@ -78,12 +85,13 @@ export function AttachPreview({ items, onRemove }: { items: Attachment[]; onRemo
 }
 
 // bottom sheet "Kirim foto" dengan pilihan Kamera / Galeri, menggantikan Alert bawaan
-export function AttachSheet({ visible, onClose, onPick }: { visible: boolean; onClose: () => void; onPick: (source: 'camera' | 'library') => void }) {
+export function AttachSheet({ visible, onClose, onPick }: { visible: boolean; onClose: () => void; onPick: (source: 'camera' | 'library' | 'file') => void }) {
   return (
-    <Sheet visible={visible} onClose={onClose} title="Kirim foto" scroll={false}>
+    <Sheet visible={visible} onClose={onClose} title="Lampirkan" scroll={false}>
       <Group>
         <Row first title="Kamera" onPress={() => onPick('camera')} right={<Icon name="camera" size={22} color={C.dim} />} />
-        <Row last title="Galeri" onPress={() => onPick('library')} right={<Icon name="image" size={22} color={C.dim} />} />
+        <Row title="Galeri" onPress={() => onPick('library')} right={<Icon name="image" size={22} color={C.dim} />} />
+        <Row last title="Berkas (PDF, Excel, Word, PPT)" onPress={() => onPick('file')} right={<Icon name="file" size={22} color={C.dim} />} />
       </Group>
     </Sheet>
   )
@@ -93,5 +101,7 @@ const s = StyleSheet.create({
   btn: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
   row: { flexGrow: 0, paddingTop: 4, paddingBottom: 6 },
   thumb: { width: 64, height: 64, borderRadius: 8, backgroundColor: C.panel2 },
+  doc: { alignItems: 'center', justifyContent: 'center', padding: 4, gap: 2 },
+  docName: { color: C.dim, fontSize: 9, textAlign: 'center' },
   remove: { position: 'absolute', top: -6, right: -6, width: 22, height: 22, borderRadius: 11, backgroundColor: C.err, alignItems: 'center', justifyContent: 'center' },
 })

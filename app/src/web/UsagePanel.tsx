@@ -1,8 +1,8 @@
-import { useEffect } from 'react'
-import type { PlanWindow } from '../../../shared/protocol'
+import { useEffect, useState } from 'react'
+import type { PlanWindow, SourceId } from '../../../shared/protocol'
 import { useClient } from '../lib/client'
 import AiControls from './AiControls'
-import { Dialog, setUI } from './ui'
+import { Drawer, setUI } from './ui'
 
 const COLORS: Record<string, string> = {
   messages: '#5b9cf5', memory_files: '#e8703a', system_tools: '#3fb27f', skills: '#e0a526', custom_agents: '#b07cf0',
@@ -35,15 +35,25 @@ export default function UsagePanel({ id }: { id?: string }) {
   const c = useClient()
   const usage = id ? c.usage.get(id) : undefined
   const ctx = usage?.context
-  const plan = c.plan
+  const active = c.sourceOf(id)
+  const [pick, setPick] = useState<SourceId | undefined>(active)
+  const viewing = pick ?? active
+  // angka c.plan milik sumber bawaan; sumber lain (termasuk milik sesi ini) diminta terpisah
+  const other = !!viewing && viewing !== c.settings?.source
+  // sumber aktif: angka langsung dari server; sumber lain: diminta sekali saat dipilih
+  const plan = other ? c.planBy.get(viewing!)?.plan ?? null : c.plan
+  const planLoading = other && !c.planBy.has(viewing!)
   const status = id ? c.runs.get(id)?.status : undefined
   const running = status === 'running' || status === 'starting' || status === 'waiting'
   useEffect(() => {
     c.requestUsage(id)
   }, [c, id])
+  useEffect(() => {
+    if (other) c.requestUsage(id, viewing)
+  }, [c, id, viewing, other])
   return (
-    <Dialog title="Penggunaan" width={480} onClose={() => setUI({ panelOpen: false })}>
-      <AiControls />
+    <Drawer title="Penggunaan" sub="Sumber AI, konteks, dan kuota paket" onClose={() => setUI({ panelOpen: false })}>
+      <AiControls pick={viewing} onPick={setPick} sessionId={id} />
       <div className="iv-qhead" style={{ margin: '16px 0 6px' }}>Jendela konteks</div>
       {ctx ? (
         <div className="iv-card">
@@ -66,18 +76,20 @@ export default function UsagePanel({ id }: { id?: string }) {
       ) : (
         <div className="iv-card"><small style={{ marginTop: 0 }}>{running ? 'Memuat konteks…' : id ? 'Konteks terlihat saat sesi ini sedang berjalan. Kirim pesan untuk melanjutkannya.' : 'Buka sesi yang sedang berjalan untuk melihat konteksnya.'}</small></div>
       )}
+      {planLoading ? <div className="iv-card"><small style={{ marginTop: 0 }}>Memuat kuota {c.settings?.sources.find(x => x.id === viewing)?.label}… (akun yang belum aktif bisa butuh beberapa detik)</small></div> : null}
+      {!planLoading && !plan && viewing ? <div className="iv-card"><small style={{ marginTop: 0 }}>Kuota {c.settings?.sources.find(x => x.id === viewing)?.label} tidak tersedia saat ini.</small></div> : null}
       {plan?.session ? (
         <>
-          <div className="iv-qhead" style={{ margin: '16px 0 6px' }}>Penggunaan paket</div>
+          <div className="iv-qhead" style={{ margin: '16px 0 6px' }}>{viewing === 'merapi' ? 'Kuota harian Merapi' : 'Penggunaan paket'}</div>
           <Plan w={plan.session} />
         </>
       ) : null}
       {plan?.weekly.length ? (
         <>
-          <div className="iv-qhead" style={{ margin: '16px 0 6px' }}>Batas mingguan</div>
+          <div className="iv-qhead" style={{ margin: '16px 0 6px' }}>{viewing === 'merapi' ? 'Kuota mingguan Merapi' : 'Batas mingguan'}</div>
           {plan.weekly.map(w => <Plan key={w.label} w={w} />)}
         </>
       ) : null}
-    </Dialog>
+    </Drawer>
   )
 }

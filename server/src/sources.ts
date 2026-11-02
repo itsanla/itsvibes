@@ -7,14 +7,15 @@ import type { SourceId, SourceInfo } from '../../shared/protocol.ts'
 // Tiga sumber AI. Personal = login Claude Code bawaan di mesin ini. Produk = login kedua di folder config
 // sendiri. Merapi = gateway AI perusahaan yang berbicara format Anthropic. Isi kunci tidak pernah ada di repo.
 
-const CLAUDE_DIR = path.join(os.homedir(), '.claude')
+export const CLAUDE_DIR = path.join(os.homedir(), '.claude')
 export const PRODUK_DIR = path.join(CONFIG_DIR, 'accounts/produk')
 const MERAPI_ENV = path.join(CONFIG_DIR, 'merapi.env')
 const MERAPI_URL = process.env.ITSVIBES_MERAPI_URL ?? 'https://ai.merapi.javan.id'
 // model Claude di gateway ditolak untuk key ini, jadi sumber Merapi memakai satu model tetap yang terbukti bisa memanggil tool
 export const MERAPI_MODEL = process.env.ITSVIBES_MERAPI_MODEL ?? 'gpt-6-luna'
 
-function merapiKey(): string {
+export const MERAPI_BASE = MERAPI_URL
+export function merapiKey(): string {
   try {
     return /^ITSVIBES_MERAPI_KEY=(.+)$/m.exec(fs.readFileSync(MERAPI_ENV, 'utf8'))?.[1].trim() ?? ''
   } catch {
@@ -45,7 +46,7 @@ export function sourceList(): SourceInfo[] {
   return [
     {
       id: 'produk', label: 'Produk', ready: sourceReady('produk'),
-      hint: sourceReady('produk') ? 'Akun Claude Code perusahaan' : `Belum login. Di Bima jalankan: CLAUDE_CONFIG_DIR=${PRODUK_DIR} claude auth login`,
+      hint: sourceReady('produk') ? 'Akun Claude Code perusahaan' : `Belum ada kredensial. Login di Bima (CLAUDE_CONFIG_DIR=${PRODUK_DIR} claude auth login) atau pasang berkas yang sudah ada: node server/src/index.ts gateway-import produk <.credentials.json>`,
     },
     { id: 'personal', label: 'Personal', ready: true, hint: 'Akun Claude Code pribadi' },
     {

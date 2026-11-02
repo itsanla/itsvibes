@@ -1,4 +1,4 @@
-import type { EffortLevel, ModelOption } from '../../../shared/protocol'
+import type { EffortLevel, ModelOption, SourceId } from '../../../shared/protocol'
 
 // dipakai sampai server mengirim daftar model aslinya
 export const FALLBACK_MODELS: ModelOption[] = [
@@ -29,3 +29,7 @@ export function modelLabel(value: string | undefined, models: ModelOption[]): st
 }
 
 export const needsCredit = (m: ModelOption) => /fable/i.test(m.value) || /kredit|usage credit/i.test(m.description)
+
+// daftar model sesuai sumber: sumber Merapi punya daftar sendiri, sumber Claude memakai model Claude Code
+export const modelsFor = (models: ModelOption[], source?: SourceId) =>
+  models.filter(m => (source === 'merapi') === (m.source === 'merapi'))

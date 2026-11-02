@@ -4,7 +4,7 @@ import Notifier from './notifier'
 import { storage } from './storage'
 import type {
   AiSettings, Answer, ChatItem, ClientMessage, ContextInfo, EffortLevel, HistoryPage, ImageAttachment, ModelOption, PendingRequest,
-  PermissionMode, PlanInfo, ServerMessage, SessionStatus, SessionSummary, SourceId,
+  PermissionMode, PlanInfo, ServerMessage, SessionStatus, SessionSummary, ShellTask, SourceId,
 } from '../../../shared/protocol'
 
 // Satu koneksi WebSocket ke itsvibes-server untuk seluruh aplikasi. Layar membaca state lewat useClient().
@@ -18,7 +18,10 @@ export interface Chat {
   queued: ChatItem[] // event yang datang saat riwayat sedang dimuat
 }
 
-export interface RunState { status: SessionStatus; mode?: PermissionMode; pending: PendingRequest[]; model?: string; effort?: EffortLevel }
+export interface RunState {
+  status: SessionStatus; mode?: PermissionMode; pending: PendingRequest[]; model?: string; effort?: EffortLevel
+  source?: SourceId; shells: ShellTask[]; compactingSince?: number
+}
 export interface Usage { context: ContextInfo | null; plan: PlanInfo | null; at: number }
 export type Conn = 'none' | 'connecting' | 'online' | 'offline' | 'unauthorized'
 
@@ -43,6 +46,7 @@ class Client {
   models: ModelOption[] = []
   usage = new Map<string, Usage>() // kunci '' = kuota paket tanpa sesi
   usageLoading = false
+  planBy = new Map<SourceId, { plan: PlanInfo | null; at: number }>() // kuota sumber yang dilihat di panel penggunaan
   settings: AiSettings | null = null
   plan: PlanInfo | null = null // kuota sumber aktif, diperbarui server secara berkala
   tokens = new Map<string, number>() // token konteks per sesi, diperbarui selama Claude menjawab
@@ -188,6 +192,76 @@ class Client {
     return (await res.json()) as T
   }
 
+  // unggah berkas dokumen ke Bima; mengembalikan path di server untuk disebut ke Claude
+  async uploadFile(body: Blob, name: string): Promise<{ path: string; name: string; size: number }> {
+    await this.init()
+    if (!this.token) throw new Error('Belum dipasangkan dengan Bima')
+    const res = await fetch(`${this.url}/api/upload?name=${encodeURIComponent(name)}`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${this.token}` },
+      body,
+    })
+    if (!res.ok) throw new Error(((await res.json().catch(() => ({}))) as { error?: string }).error ?? `HTTP ${res.status}`)
+    return (await res.json()) as { path: string; name: string; size: number }
+  }
+
+  // gambar/PDF dari Bima sebagai blob (token lewat header, bukan URL)
+  async fetchFile(path: string, cwd?: string): Promise<{ url: string; type: string; name: string }> {
+    await this.init()
+    if (!this.token) throw new Error('Belum dipasangkan dengan Bima')
+    const q = new URLSearchParams({ path })
+    if (cwd) q.set('cwd', cwd)
+    const res = await fetch(`${this.url}/api/file?${q}`, { headers: { authorization: `Bearer ${this.token}` } })
+    if (!res.ok) throw new Error(((await res.json().catch(() => ({}))) as { error?: string }).error ?? `HTTP ${res.status}`)
+    const blob = await res.blob()
+    const name = decodeURIComponent(res.headers.get('x-file-name') ?? path.split('/').pop() ?? 'berkas')
+    return { url: URL.createObjectURL(blob), type: blob.type, name }
+  }
+
+  // versi native (tanpa URL.createObjectURL): gambar jadi data URI; PDF dibuka lewat tautan ber-token di browser HP
+  fileUrl(path: string, cwd?: string): string {
+    const q = new URLSearchParams({ path, token: this.token })
+    if (cwd) q.set('cwd', cwd)
+    return `${this.url}/api/file?${q}`
+  }
+
+  async fetchFileData(path: string, cwd?: string): Promise<{ uri: string; name: string }> {
+    await this.init()
+    if (!this.token) throw new Error('Belum dipasangkan dengan Bima')
+    const q = new URLSearchParams({ path })
+    if (cwd) q.set('cwd', cwd)
+    const res = await fetch(`${this.url}/api/file?${q}`, { headers: { authorization: `Bearer ${this.token}` } })
+    if (!res.ok) throw new Error(((await res.json().catch(() => ({}))) as { error?: string }).error ?? `HTTP ${res.status}`)
+    const blob = await res.blob()
+    const uri = await new Promise<string>((resolve, reject) => {
+      const r = new FileReader()
+      r.onload = () => resolve(String(r.result))
+      r.onerror = () => reject(new Error('Gagal membaca gambar'))
+      r.readAsDataURL(blob)
+    })
+    return { uri, name: decodeURIComponent(res.headers.get('x-file-name') ?? path.split('/').pop() ?? 'berkas') }
+  }
+
+  // gambar yang pernah diunggah ke satu pesan, diambil dari riwayat di Bima
+  private imageCache = new Map<string, Promise<string[]>>()
+  userImages(sessionId: string, uuid: string): Promise<string[]> {
+    const key = sessionId + uuid
+    let p = this.imageCache.get(key)
+    if (!p) {
+      p = (async () => {
+        for (let i = 0; i < 4; i++) {
+          const r = await this.api<{ mediaType: string; data: string }[]>(`/api/sessions/${sessionId}/images?uuid=${encodeURIComponent(uuid)}`)
+          if (r.length) return r.map(x => `data:${x.mediaType};base64,${x.data}`)
+          await new Promise(res => setTimeout(res, 1500)) // pesan baru: JSONL mungkin belum tertulis
+        }
+        return []
+      })()
+      p.catch(() => this.imageCache.delete(key))
+      this.imageCache.set(key, p)
+    }
+    return p
+  }
+
   async refreshSessions() {
     if (!this.paired) return
     this.sessionsLoading = true
@@ -302,7 +376,8 @@ class Client {
         break
       case 'usage':
         this.usageLoading = false
-        this.usage.set(m.sessionId ?? '', { context: m.context, plan: m.plan, at: Date.now() })
+        if (m.source) this.planBy.set(m.source, { plan: m.plan, at: Date.now() })
+        else this.usage.set(m.sessionId ?? '', { context: m.context, plan: m.plan, at: Date.now() })
         if (m.sessionId && m.context) this.tokens.set(m.sessionId, m.context.total)
         break
       case 'settings':
@@ -330,7 +405,10 @@ class Client {
       }
       case 'status': {
         const prev = this.runs.get(m.sessionId)
-        this.runs.set(m.sessionId, { status: m.status, mode: m.mode, pending: m.pending, model: m.model, effort: m.effort })
+        this.runs.set(m.sessionId, {
+          status: m.status, mode: m.mode, pending: m.pending, model: m.model, effort: m.effort,
+          source: m.source, shells: m.shells ?? [], compactingSince: m.compactingSince,
+        })
         // perbarui lingkar konteks setiap kali Claude selesai satu giliran
         if (m.status === 'idle' && prev?.status !== 'idle' && this.open.has(m.sessionId)) this.requestUsage(m.sessionId)
         if (this.sessions.some(x => x.id === m.sessionId)) {
@@ -433,11 +511,13 @@ class Client {
   // kirim ke sesi yang ada; tanpa sessionId membuat sesi baru dan mengembalikan id-nya
   send(
     text: string,
-    opts: { sessionId?: string; cwd?: string; images?: ImageAttachment[]; model?: string; effort?: EffortLevel } = {},
+    opts: { sessionId?: string; cwd?: string; images?: (ImageAttachment & { doc?: { name: string; path: string } })[]; model?: string; effort?: EffortLevel } = {},
   ): Promise<string> {
     const { sessionId, cwd, model, effort } = opts
+    const docs = (opts.images ?? []).flatMap(i => (i.doc ? [i.doc] : []))
+    if (docs.length) text = `${text}\n\nBerkas terlampir (di server Bima):\n${docs.map(d => `- ${d.path}`).join('\n')}`.trim()
     const ref = Math.random().toString(36).slice(2)
-    const images = opts.images?.map(i => ({ mediaType: i.mediaType, data: i.data }))
+    const images = opts.images?.filter(i => !i.doc).map(i => ({ mediaType: i.mediaType, data: i.data }))
     if (!this.raw({ t: 'send', ref, sessionId, cwd, text, images: images?.length ? images : undefined, model, effort })) {
       return Promise.reject(new Error('Belum tersambung ke Bima'))
     }
@@ -477,8 +557,13 @@ class Client {
     if (!this.raw({ t: 'effort', sessionId: id, effort })) this.showToast('Belum tersambung ke Bima')
   }
 
-  setSource(source: SourceId) {
-    if (!this.raw({ t: 'setSource', source })) this.showToast('Belum tersambung ke Bima')
+  // source yang dipakai sesi ini; sesi yang belum berjalan mengikuti sumber bawaan
+  sourceOf(sessionId?: string): SourceId | undefined {
+    return (sessionId ? this.runs.get(sessionId)?.source : undefined) ?? this.settings?.source
+  }
+
+  setSource(source: SourceId, sessionId?: string) {
+    if (!this.raw({ t: 'setSource', source, sessionId })) this.showToast('Belum tersambung ke Bima')
   }
 
   deleteSessions(ids: string[]) {
@@ -493,8 +578,8 @@ class Client {
     this.raw({ t: 'models' })
   }
 
-  requestUsage(sessionId?: string) {
-    if (this.raw({ t: 'usage', sessionId })) {
+  requestUsage(sessionId?: string, source?: SourceId) {
+    if (this.raw({ t: 'usage', sessionId, source })) {
       this.usageLoading = true
       this.changed()
     }

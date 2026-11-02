@@ -13,8 +13,8 @@ export default function ModelChip({ models, model, effort, onModel, onEffort }: 
 }) {
   const [more, setMore] = useState(false)
   const list = models.length ? models : FALLBACK_MODELS
-  const main = list.filter(m => !m.value.startsWith('claude-'))
-  const versions = list.filter(m => m.value.startsWith('claude-'))
+  const main = list.filter(m => !m.more && !m.value.startsWith('claude-'))
+  const versions = list.filter(m => m.more || m.value.startsWith('claude-'))
   const current = list.some(m => m.value === model) ? model : 'default'
   const chosen = list.find(m => m.value === current)
   const levels = chosen?.efforts?.length ? EFFORTS.filter(e => chosen.efforts!.includes(e.value)) : EFFORTS

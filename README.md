@@ -99,3 +99,16 @@ Dipilih dari panel Penggunaan atau Pengaturan, berlaku untuk seluruh server:
 - Personal: login Claude Code bawaan (`~/.claude`).
 - Produk: login kedua. Sekali saja di server: `CLAUDE_CONFIG_DIR=~/.config/itsvibes/accounts/produk claude auth login`.
 - Merapi: gateway berformat Anthropic. Key di `~/.config/itsvibes/merapi.env` (`ITSVIBES_MERAPI_KEY=...`, mode 600), tidak pernah di repo.
+
+## Browser bersama
+
+Server menyalakan satu Chromium berjendela di layar virtual Xvfb (`:77`) dengan profil tetap
+`~/.config/itsvibes/browser-profile` (cookie dan login bertahan, termasuk cookie sesi karena sesi tab dipulihkan).
+Dua pihak memakainya:
+
+- Claude, lewat Playwright MCP (`@playwright/mcp`, `--cdp-endpoint`) yang otomatis terpasang di setiap sesi sebagai server `browser`.
+- Aan, lewat halaman `/browser` (WebSocket `/ws/browser`): frame JPEG dari screencast CDP, klik, ketik, scroll, tab, dan kolom alamat.
+  Kartu "Browser" di halaman sesi menampilkan pratinjau selagi Claude memakainya dan membuka `/browser` di tab baru.
+
+Port CDP (`9333`) hanya di localhost. Chromium berjalan dengan `--no-sandbox` karena sandbox ditolak sistem (namespace pengguna);
+`ITSVIBES_BROWSER=0` mematikan seluruh fitur. Layar browser hanya ada di versi web, aplikasi Android belum.

@@ -2,7 +2,8 @@ import { ImageManipulator, SaveFormat } from 'expo-image-manipulator'
 import * as ImagePicker from 'expo-image-picker'
 import type { ImageAttachment } from '../../../shared/protocol'
 
-export interface Attachment extends ImageAttachment { uri: string }
+// doc terisi untuk berkas non-gambar yang sudah diunggah ke Bima: yang dikirim ke Claude hanya path-nya
+export interface Attachment extends ImageAttachment { uri: string; doc?: { name: string; path: string } }
 
 // sisi terpanjang yang disarankan Anthropic; foto kamera 12 MP jadi beberapa ratus KB saja
 const MAX_EDGE = 1568
@@ -45,4 +46,25 @@ export async function attachFile(file: File): Promise<Attachment> {
     img.src = uri
   })
   return shrink({ uri, ...size } as ImagePicker.ImagePickerAsset)
+}
+
+export const DOC_ACCEPT = '.pdf,.doc,.docx,.xls,.xlsx,.csv,.ppt,.pptx,.txt,.md,.json,.zip'
+
+// Unggah satu berkas dokumen; lampirannya hanya berisi path di server (tanpa isi) supaya riwayat tidak membengkak
+export async function pickDocs(remaining: number): Promise<Attachment[]> {
+  const DocumentPicker = await import('expo-document-picker')
+  const res = await DocumentPicker.getDocumentAsync({ multiple: true, copyToCacheDirectory: true })
+  if (res.canceled) return []
+  return Promise.all(
+    res.assets.slice(0, remaining).map(async a => {
+      const blob = await (await fetch(a.uri)).blob()
+      return attachDoc(blob, a.name, a.uri)
+    }),
+  )
+}
+
+export async function attachDoc(blob: Blob, name: string, uri: string): Promise<Attachment> {
+  const { client } = await import('./client')
+  const up = await client.uploadFile(blob, name)
+  return { uri, mediaType: 'image/jpeg', data: '', doc: { name: up.name, path: up.path } }
 }

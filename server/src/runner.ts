@@ -2,11 +2,12 @@ import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import { query } from '@anthropic-ai/claude-agent-sdk'
-import type { PermissionResult, PermissionUpdate, Query, SDKMessage, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
-import { CLAUDE_BIN, DEFAULT_CWD, IDLE_MS, MIN_COMPACT_TOKENS, STATE_DIR } from './config.ts'
+import type { Options, PermissionResult, PermissionUpdate, Query, SDKMessage, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
+import { BROWSER_ENABLED, BROWSER_PORT, CLAUDE_BIN, DEFAULT_CWD, IDLE_MS, MIN_COMPACT_TOKENS, STATE_DIR } from './config.ts'
 import { deleteSessionFiles, findFile, lastContextTokens, liveElsewhere, markCreated, meta, toItems, toolSummary } from './sessions.ts'
+import { merapiModels, merapiPlan } from './merapi.ts'
 import { MERAPI_MODEL, prepareProduk, sourceEnv, sourceList, sourceReady } from './sources.ts'
-import { COMPACT_WINDOWS } from '../../shared/protocol.ts'
+import { COMPACT_WINDOWS, type ShellTask } from '../../shared/protocol.ts'
 import type {
   AiSettings, Answer, ChatItem, ContextInfo, EffortLevel, ImageAttachment, ModelOption, PendingRequest, PermissionMode, PlanInfo,
   PlanWindow, Question, ServerMessage, SessionStatus, SourceId,
@@ -74,6 +75,13 @@ function childEnv(source: SourceId): Record<string, string> {
   return { ...env, ...sourceEnv(source) }
 }
 
+// Playwright MCP yang memakai Chromium bersama (browser.ts), jadi Aan bisa menonton apa yang dikerjakan Claude
+const PLAYWRIGHT_MCP = path.join(import.meta.dirname, '../node_modules/@playwright/mcp/cli.js')
+function browserMcp(): Options['mcpServers'] {
+  if (!BROWSER_ENABLED || !fs.existsSync(PLAYWRIGHT_MCP)) return undefined
+  return { browser: { type: 'stdio', command: process.execPath, args: [PLAYWRIGHT_MCP, '--cdp-endpoint', `http://127.0.0.1:${BROWSER_PORT}`] } }
+}
+
 export class Run {
   sessionId = ''
   readonly cwd: string
@@ -98,6 +106,8 @@ export class Run {
   private tokensSentAt = 0
   private dirty = false // ada percakapan baru sejak compact terakhir
   private compacting = false
+  private shells: ShellTask[] = []
+  private compactingSince = 0
   private closeAfterCompact = false
   private closed: (() => void)[] = []
 
@@ -114,11 +124,13 @@ export class Run {
     this.title = opts.title ?? ''
     this.source = opts.source
     this.tokens = opts.tokens ?? 0
-    if (opts.model && opts.model !== 'default') this.model = opts.model
-    this.effort = opts.effort
+    // model Merapi dan model Claude tidak saling dikenal: pilihan lama yang tidak cocok dengan sumber ini diabaikan
+    const want = opts.model && opts.model !== 'default' ? opts.model : undefined
     if (this.source === 'merapi') {
-      this.model = MERAPI_MODEL
-      this.effort = undefined
+      this.model = want && hub.isMerapiModel(want) ? want : MERAPI_MODEL
+    } else {
+      if (want && !hub.isMerapiModel(want)) this.model = want
+      this.effort = opts.effort
     }
     if (opts.sessionId) this.sessionId = opts.sessionId
     this.q = query({
@@ -131,6 +143,7 @@ export class Run {
         pathToClaudeCodeExecutable: CLAUDE_BIN,
         env: childEnv(this.source),
         settings: { autoCompactWindow: opts.compactWindow },
+        mcpServers: browserMcp(),
         includePartialMessages: true,
         permissionMode: this.mode,
         allowDangerouslySkipPermissions: true, // supaya mode bypass bisa dipilih dari HP
@@ -156,7 +169,7 @@ export class Run {
     return {
       t: 'status', sessionId: this.sessionId, status: this.status, mode: this.mode,
       pending: [...this.pending.values()].map(p => p.req), seq: this.seq, model: this.model || undefined,
-      effort: this.effort,
+      effort: this.effort, source: this.source, shells: this.shells, compactingSince: this.compactingSince || undefined,
     }
   }
 
@@ -181,14 +194,16 @@ export class Run {
           ...(text ? [{ type: 'text' as const, text }] : []),
         ]
       : text
+    const uuid = crypto.randomUUID() // dipakai Claude Code sebagai uuid baris JSONL, jadi gambar bisa dicari lagi
     this.inbox.push({
       type: 'user',
+      uuid,
       message: { role: 'user', content },
       parent_tool_use_id: null,
       origin: { kind: 'human' },
     } as SDKUserMessage)
     this.item({
-      k: 'user', id: crypto.randomUUID(), ts: new Date().toISOString(), text,
+      k: 'user', id: uuid, ts: new Date().toISOString(), text,
       ...(images.length ? { images: images.length } : {}),
     })
     this.setStatus(this.pending.size ? 'waiting' : 'running')
@@ -207,6 +222,8 @@ export class Run {
     } finally {
       for (const p of this.pending.values()) p.resolve({ behavior: 'deny', message: 'Sesi dihentikan' })
       this.pending.clear()
+      this.shells = []
+      this.compactingSince = 0
       this.setStatus('closed')
       this.hub.remove(this)
       for (const fn of this.closed.splice(0)) fn()
@@ -274,7 +291,24 @@ export class Run {
       }
       return
     }
+    if (m.type === 'system' && m.subtype === 'status') {
+      const since = m.status === 'compacting' ? this.compactingSince || Date.now() : 0
+      if (since !== this.compactingSince) {
+        this.compactingSince = since
+        if (this.sessionId) this.hub.events.toAll(this.statusMessage())
+      }
+      return
+    }
+    if (m.type === 'system' && m.subtype === 'background_tasks_changed') {
+      // set penuh, bukan selisih; agen dan tugas ambient tidak dihitung sebagai shell
+      this.shells = m.tasks
+        .filter(t => !t.ambient && (t.task_type === 'local_bash' || t.task_type === 'monitor_mcp' || t.task_type === 'monitor'))
+        .map(t => ({ id: t.task_id, type: t.task_type, description: t.description }))
+      if (this.sessionId) this.hub.events.toAll(this.statusMessage())
+      return
+    }
     if (m.type === 'system' && m.subtype === 'compact_boundary') {
+      this.compactingSince = 0
       this.item({ k: 'system', id: m.uuid, ts: new Date().toISOString(), text: 'Percakapan diringkas (compact)' })
       this.dirty = false
       this.tokensSentAt = 0
@@ -282,6 +316,7 @@ export class Run {
       return
     }
     if (m.type === 'result') {
+      this.compactingSince = 0
       this.setStatus(this.pending.size ? 'waiting' : 'idle')
       this.tokensSentAt = 0
       if (this.tokens) this.setTokens(this.tokens)
@@ -450,7 +485,7 @@ function writeJson(file: string, data: unknown) {
   fs.renameSync(file + '.tmp', file)
 }
 
-interface Pref { model?: string; effort?: EffortLevel }
+interface Pref { model?: string; effort?: EffortLevel; source?: SourceId }
 
 // models.json lama menyimpan string model saja per sesi
 function loadPrefs(): Record<string, Pref> {
@@ -502,6 +537,8 @@ export class Hub {
   private modelList: ModelOption[] = readJson(MODELS_FILE, FALLBACK_MODELS)
   private modelsLearned = false
   plan: PlanInfo | null = null
+  private merapiList: ModelOption[] = []
+  private planCache = new Map<SourceId, { plan: PlanInfo | null; at: number }>() // kuota sumber yang hanya dilihat, bukan dipakai
   private planAt = 0
   private planBusy = false
   private saved: { source: SourceId; compactWindow: number } = {
@@ -510,6 +547,7 @@ export class Hub {
   constructor(events: HubEvents) {
     this.events = events
     prepareProduk()
+    void this.loadMerapiModels()
     setInterval(() => {
       for (const r of this.runs.values()) {
         if (r.status === 'idle' && !r.pending.size && !r.closing && Date.now() - r.lastActivity > IDLE_MS) r.compactThenStop()
@@ -527,19 +565,30 @@ export class Hub {
     this.events.toAll({ t: 'settings', settings: this.settings() })
   }
 
-  // Sesi yang berjalan memakai sumber lama sampai ditutup; pesan berikutnya membuka proses baru dengan sumber baru.
-  setSource(source: SourceId) {
+  // Sumber dipilih per sesi. Sesi yang berjalan memakai sumber lama sampai ditutup; pesan berikutnya membuka proses baru
+  // dengan sumber baru. Tanpa sessionId yang diubah hanya sumber bawaan untuk sesi baru, sesi lain tidak ikut berpindah.
+  setSource(source: SourceId, sessionId?: string): ServerMessage | null {
     const info = sourceList().find(s => s.id === source)
     if (!info) throw new Error('Sumber tidak dikenal')
     if (!info.ready) throw new Error(info.hint)
-    if (source === this.saved.source) return
-    this.saved.source = source
-    this.saveSettings()
-    for (const r of this.runs.values()) if (r.source !== source) this.closeWhenFree(r)
-    this.plan = null
-    this.planAt = 0
-    this.events.toAll({ t: 'plan', plan: null })
-    void this.refreshPlan()
+    let st: ServerMessage | null = null
+    if (sessionId) {
+      this.savePref(sessionId, { source })
+      const r = this.runs.get(sessionId)
+      if (r && r.source !== source) this.closeWhenFree(r)
+      else if (!r) st = this.closedStatus(sessionId)
+    }
+    if (source !== this.saved.source) {
+      this.saved.source = source
+      this.saveSettings()
+      this.plan = null
+      this.planAt = 0
+      this.planCache.delete(source)
+      this.events.toAll({ t: 'plan', plan: null })
+      if (source === 'merapi') void this.loadMerapiModels()
+      void this.refreshPlan()
+    }
+    return st
   }
 
   setCompactWindow(tokens: number) {
@@ -561,15 +610,15 @@ export class Hub {
   async refreshPlan() {
     const source = this.saved.source
     if (this.planBusy) return
-    if (source === 'merapi' || !sourceReady(source)) {
+    if (!sourceReady(source)) {
       if (this.plan) this.events.toAll({ t: 'plan', plan: (this.plan = null) })
       return
     }
-    const run = [...this.runs.values()].find(r => r.source === source && !r.closing)
-    if (Date.now() - this.planAt < (run ? 30_000 : 180_000)) return
+    const run = source === 'merapi' ? undefined : [...this.runs.values()].find(r => r.source === source && !r.closing)
+    if (Date.now() - this.planAt < (source === 'merapi' ? 60_000 : run ? 30_000 : 180_000)) return
     this.planBusy = true
     try {
-      const plan = await withTimeout(run ? run.planUsage() : probePlan(source), 30_000)
+      const plan = await withTimeout(source === 'merapi' ? merapiPlan() : run ? run.planUsage() : probePlan(source), 30_000)
       this.planAt = Date.now()
       if (source !== this.saved.source) return
       this.plan = plan
@@ -581,10 +630,47 @@ export class Hub {
     }
   }
 
+  // Kuota sumber apa pun untuk panel penggunaan (melihat tanpa berpindah). Sumber aktif memakai angka yang sudah ada.
+  async planFor(source: SourceId): Promise<PlanInfo | null> {
+    if (!sourceReady(source)) return null
+    if (source === this.saved.source) {
+      await this.refreshPlan()
+      return this.plan
+    }
+    const hit = this.planCache.get(source)
+    if (hit && Date.now() - hit.at < 120_000) return hit.plan
+    const run = source === 'merapi' ? undefined : [...this.runs.values()].find(r => r.source === source && !r.closing)
+    const plan = await withTimeout(source === 'merapi' ? merapiPlan() : run ? run.planUsage() : probePlan(source), 30_000)
+    this.planCache.set(source, { plan, at: Date.now() })
+    return plan
+  }
+
+  isMerapiModel(value: string) {
+    return value !== 'default' && this.merapiList.some(m => m.value === value)
+  }
+
+  private async loadMerapiModels() {
+    try {
+      const list = await merapiModels()
+      if (!list.length) return
+      this.merapiList = list
+      this.events.toAll({ t: 'models', models: this.models() })
+    } catch {
+      // gateway tidak terjangkau: daftar Merapi kosong, sumber Merapi memakai model bawaannya
+    }
+  }
+
   register(r: Run) {
     this.fresh.delete(r)
     this.runs.set(r.sessionId, r)
-    if (r.source !== 'merapi' && (r.model || r.effort)) this.savePref(r.sessionId, { model: r.model || null, effort: r.effort ?? null })
+    // sumber disematkan per sesi: mengganti sumber di sesi lain tidak boleh memindahkan sesi ini
+    const keep = r.source !== 'merapi' && (r.model || r.effort)
+    this.savePref(r.sessionId, { source: r.source, ...(keep ? { model: r.model || null, effort: r.effort ?? null } : {}) })
+  }
+
+  sourceOf(sessionId: string): SourceId {
+    const s = this.pref(sessionId).source
+    return s && sourceList().some(x => x.id === s) ? s : this.saved.source
   }
 
   pref(id: string): Pref {
@@ -592,7 +678,7 @@ export class Hub {
   }
 
   // null menghapus pilihan (kembali ke pengaturan Claude Code)
-  private savePref(id: string, patch: { model?: string | null; effort?: EffortLevel | null }) {
+  private savePref(id: string, patch: { model?: string | null; effort?: EffortLevel | null; source?: SourceId }) {
     const next: Pref = { ...this.prefs[id] }
     for (const [k, v] of Object.entries(patch) as [keyof Pref, string | null | undefined][]) {
       if (v === undefined) continue
@@ -606,11 +692,11 @@ export class Hub {
 
   private closedStatus(sessionId: string): ServerMessage {
     const p = this.pref(sessionId)
-    return { t: 'status', sessionId, status: liveElsewhere().has(sessionId) ? 'terminal' : 'closed', pending: [], model: p.model, effort: p.effort }
+    return { t: 'status', sessionId, status: liveElsewhere().has(sessionId) ? 'terminal' : 'closed', pending: [], model: p.model, effort: p.effort, source: this.sourceOf(sessionId) }
   }
 
   models(): ModelOption[] {
-    return this.modelList
+    return [...this.modelList, ...this.merapiList]
   }
 
   // daftar model asli dari Claude Code, diambil sekali dari sesi pertama yang berjalan
@@ -625,7 +711,7 @@ export class Hub {
           supportsEffort: m.supportsEffort, efforts: m.supportedEffortLevels,
         }))
         writeJson(MODELS_FILE, this.modelList)
-        this.events.toAll({ t: 'models', models: this.modelList })
+        this.events.toAll({ t: 'models', models: this.models() })
       })
       .catch(() => (this.modelsLearned = false))
   }
@@ -647,11 +733,11 @@ export class Hub {
   }
 
   // konteks hanya ada untuk sesi yang sedang berjalan; kuota paket berlaku untuk seluruh akun
-  async usage(sessionId?: string): Promise<{ context: ContextInfo | null; plan: PlanInfo | null }> {
+  async usage(sessionId?: string, source?: SourceId): Promise<{ context: ContextInfo | null; plan: PlanInfo | null }> {
     const r = sessionId ? this.runs.get(sessionId) : undefined
     const context = r ? await withTimeout(r.contextUsage(), 20_000).catch(() => null) : null
-    await this.refreshPlan()
-    return { context, plan: this.plan }
+    const plan = await this.planFor(source ?? this.saved.source).catch(() => null)
+    return { context, plan }
   }
 
   // Sesi yang sedang bekerja atau terbuka di terminal dilewati; sesi yang hanya menganggur ditutup dulu
@@ -734,7 +820,7 @@ export class Hub {
       const p = this.pref(f.id)
       const r = new Run(this, {
         sessionId: f.id, cwd: realCwd(m.cwd), mode: DEFAULT_MODE, title: m.title, model: p.model, effort: p.effort,
-        source: this.saved.source, compactWindow: this.saved.compactWindow, tokens: lastContextTokens(f),
+        source: this.sourceOf(f.id), compactWindow: this.saved.compactWindow, tokens: lastContextTokens(f),
       })
       this.runs.set(f.id, r)
       r.send(opts.text, images)

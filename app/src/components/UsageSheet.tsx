@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native'
-import type { ContextInfo, PlanWindow } from '../../../shared/protocol'
+import type { ContextInfo, PlanWindow, SourceId } from '../../../shared/protocol'
 import { useClient, type Usage } from '../lib/client'
 import { C } from '../lib/theme'
 import AiControls from './AiControls'
@@ -78,15 +78,32 @@ function PlanCard({ w }: { w: PlanWindow }) {
   )
 }
 
-export default function UsageSheet({ visible, onClose, usage, loading, running, onRefresh }: {
+export default function UsageSheet({ visible, onClose, usage, loading, running, onRefresh, sessionId }: {
   visible: boolean
+  sessionId?: string
   onClose: () => void
   usage?: Usage
   loading: boolean
   running: boolean
   onRefresh: () => void
 }) {
-  const plan = useClient().plan
+  const c = useClient()
+  const active = c.sourceOf(sessionId)
+  const [pick, setPick] = useState<SourceId | undefined>(active)
+  const viewing = pick ?? active
+  // angka c.plan milik sumber bawaan; sumber lain (termasuk milik sesi ini) diminta terpisah
+  const other = !!viewing && viewing !== c.settings?.source
+  // sumber aktif: angka langsung dari server; sumber lain: diminta sekali saat dipilih
+  const plan = other ? c.planBy.get(viewing)?.plan ?? null : c.plan
+  const planLoading = other && !c.planBy.has(viewing)
+  const label = c.settings?.sources.find(x => x.id === viewing)?.label
+  const merapi = viewing === 'merapi'
+  useEffect(() => {
+    if (visible && other) c.requestUsage(sessionId, viewing)
+  }, [c, visible, other, viewing, sessionId])
+  useEffect(() => {
+    if (visible) setPick(active) // eslint-disable-line react-hooks/set-state-in-effect
+  }, [visible, active])
   return (
     <Sheet
       visible={visible}
@@ -98,7 +115,7 @@ export default function UsageSheet({ visible, onClose, usage, loading, running, 
         </Pressable>
       }
     >
-      <AiControls />
+      <AiControls pick={viewing} onPick={setPick} sessionId={sessionId} />
       <SectionLabel>Konteks</SectionLabel>
       {usage?.context ? (
         <ContextCard ctx={usage.context} />
@@ -107,15 +124,17 @@ export default function UsageSheet({ visible, onClose, usage, loading, running, 
           <Text style={s.cardSub}>{running ? 'Memuat konteks…' : 'Konteks terlihat saat sesi ini sedang berjalan. Kirim pesan untuk melanjutkannya.'}</Text>
         </View>
       )}
+      {planLoading ? <Text style={s.cardSub}>Memuat kuota {label}… (akun yang belum aktif bisa butuh beberapa detik)</Text> : null}
+      {!planLoading && !plan && viewing ? <Text style={s.cardSub}>Kuota {label} tidak tersedia saat ini.</Text> : null}
       {plan?.session ? (
         <>
-          <SectionLabel>Penggunaan paket</SectionLabel>
+          <SectionLabel>{merapi ? 'Kuota harian Merapi' : 'Penggunaan paket'}</SectionLabel>
           <PlanCard w={plan.session} />
         </>
       ) : null}
       {plan?.weekly.length ? (
         <>
-          <SectionLabel>Batas mingguan</SectionLabel>
+          <SectionLabel>{merapi ? 'Kuota mingguan Merapi' : 'Batas mingguan'}</SectionLabel>
           {plan.weekly.map(w => <PlanCard key={w.label} w={w} />)}
         </>
       ) : null}

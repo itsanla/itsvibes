@@ -3,7 +3,6 @@ import { type MouseEvent, useMemo, useState } from 'react'
 import type { SessionSummary } from '../../../shared/protocol'
 import { useClient } from '../lib/client'
 import { shortPath, timeAgo } from '../lib/format'
-import SessionTools from './SessionTools'
 import { Dialog, I, setUI, useUI } from './ui'
 
 function bucket(ms: number): string {
@@ -111,7 +110,6 @@ export default function Sidebar() {
         <input id="iv-search" placeholder="Cari sesi atau folder" value={q} onChange={e => setQ(e.target.value)} />
         {q ? <button className="iv-icon-btn" style={{ width: 22, height: 22 }} onClick={() => setQ('')}><I n="close" s={14} /></button> : <span className="iv-kbd">Ctrl+K</span>}
       </label>
-      <SessionTools id={active} />
       {picked ? (
         <div className="iv-bulk">
           <span>{picked.size} dipilih</span>

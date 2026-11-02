@@ -2,7 +2,7 @@
   "expo": {
     "name": "itsvibes",
     "slug": "itsvibes",
-    "version": "1.5.0",
+    "version": "1.7.0",
     "scheme": "itsvibes",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -10,7 +10,7 @@
     "backgroundColor": "#0f1115",
     "android": {
       "package": "id.anla.itsvibes",
-      "versionCode": 7,
+      "versionCode": 9,
       "adaptiveIcon": {
         "backgroundColor": "#0f1115",
         "foregroundImage": "./assets/android-icon-foreground.png",
