@@ -1,7 +1,7 @@
 import * as Clipboard from 'expo-clipboard'
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ActivityIndicator, BackHandler, FlatList, Pressable, StyleSheet, Text, View } from 'react-native'
+import { ActivityIndicator, BackHandler, FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native'
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import type { ChatItem } from '../../../../shared/protocol'
@@ -108,6 +108,18 @@ export default function SessionScreen() {
     )
   }
   const openMenu = () => setMenu(true)
+  const [renaming, setRenaming] = useState(false)
+  const [draft, setDraft] = useState('')
+  const startRename = () => {
+    setMenu(false)
+    setDraft(summary?.title ?? '')
+    setRenaming(true)
+  }
+  const saveRename = () => {
+    const t = draft.trim()
+    setRenaming(false)
+    if (t && t !== summary?.title) c.rename(id, t)
+  }
   const openModel = () => {
     c.requestModels()
     setModelOpen(true)
@@ -242,13 +254,33 @@ export default function SessionScreen() {
           <Text style={s.hint}>Mode bisa diubah setelah sesi berjalan. Sesi yang dilanjutkan mulai dengan mode terakhir.</Text>
         )}
         <Group>
+          <Row first title="Ubah nama sesi" onPress={startRename} />
           {run && run.status !== 'closed' ? (
-            <Row first title={<Text style={s.danger}>Hentikan proses sesi ini</Text>} onPress={() => { c.stop(id); setMenu(false) }} />
+            <Row title={<Text style={s.danger}>Hentikan proses sesi ini</Text>} onPress={() => { c.stop(id); setMenu(false) }} />
           ) : null}
           <Row
-            first={!(run && run.status !== 'closed')} last title="Salin perintah claude --resume"
+            last title="Salin perintah claude --resume"
             onPress={() => { void Clipboard.setStringAsync(`claude --resume ${id}`); c.showToast('Perintah resume disalin'); setMenu(false) }}
           />
+        </Group>
+      </Sheet>
+
+      <Sheet visible={renaming} onClose={() => setRenaming(false)} title="Ubah nama sesi">
+        <TextInput
+          style={s.renameInput}
+          value={draft}
+          onChangeText={setDraft}
+          autoFocus
+          selectTextOnFocus
+          maxLength={120}
+          returnKeyType="done"
+          onSubmitEditing={saveRename}
+          placeholder="Nama sesi"
+          placeholderTextColor={C.faint}
+        />
+        <Group>
+          <Row first title="Simpan" onPress={saveRename} />
+          <Row last title="Batal" onPress={() => setRenaming(false)} />
         </Group>
       </Sheet>
     </KeyboardAvoidingView>
@@ -260,6 +292,7 @@ const s = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: C.bg, paddingHorizontal: 14, paddingBottom: 10 },
   back: { padding: 6 },
   title: { color: C.text, fontSize: 16, fontWeight: '700' },
+  renameInput: { color: C.text, fontSize: 16, backgroundColor: C.panel2, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12, marginHorizontal: 6, marginBottom: 14 },
   sub: { fontSize: 12, marginTop: 2 },
   headerBtn: { padding: 6 },
   live: { flexDirection: 'row', alignItems: 'center', gap: 6 },

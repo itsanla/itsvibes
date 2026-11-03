@@ -76,6 +76,15 @@ function summaries(showAutomated: boolean): SessionSummary[] {
     })
     if (out.length >= 400) break
   }
+  // sesi yang baru dikirim pesan pertamanya: berkas JSONL belum ditulis, tapi sudah harus tampil di daftar
+  const seen = new Set(out.map(x => x.id))
+  for (const run of hub.runs.values()) {
+    if (!run.sessionId || seen.has(run.sessionId)) continue
+    out.unshift({
+      id: run.sessionId, title: run.displayTitle, cwd: run.cwd, project: '', mtime: run.lastActivity, size: 0,
+      status: run.status, mode: run.mode, automated: false, pending: run.pending.size,
+    })
+  }
   return out
 }
 
@@ -466,6 +475,12 @@ async function onMessage(c: Conn, m: ClientMessage) {
       if (!Array.isArray(m.ids)) return
       const res = await hub.deleteSessions(m.ids.map(String))
       for (const x of conns) if (x.role === 'app') sendTo(x, { t: 'sessionsDeleted', ...res })
+      return
+    }
+    case 'rename': {
+      const title = hub.rename(String(m.sessionId), String(m.title ?? ''))
+      if (title === undefined) return sendTo(c, { t: 'error', sessionId: m.sessionId, message: 'Nama sesi tidak bisa diubah' })
+      for (const x of conns) if (x.role === 'app') sendTo(x, { t: 'renamed', sessionId: m.sessionId, title })
       return
     }
     case 'answer':

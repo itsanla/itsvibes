@@ -183,6 +183,14 @@ export class Run {
   }
   private lastPrompt = ''
 
+  // judul untuk daftar sesi sebelum berkas JSONL-nya ada
+  get displayTitle() {
+    return this.label
+  }
+  rename(title: string) {
+    this.title = title
+  }
+
   send(text: string, images: ImageAttachment[] = []) {
     this.lastActivity = Date.now()
     this.dirty = true
@@ -738,6 +746,17 @@ export class Hub {
     const context = r ? await withTimeout(r.contextUsage(), 20_000).catch(() => null) : null
     const plan = await this.planFor(source ?? this.saved.source).catch(() => null)
     return { context, plan }
+  }
+
+  // Ganti nama sesi: baris custom-title ditambahkan ke JSONL, format yang sama dengan /rename di Claude Code
+  rename(id: string, raw: string): string | undefined {
+    const title = raw.replace(/\s+/g, ' ').trim().slice(0, 120)
+    if (!title) return undefined
+    const f = findFile(id)
+    if (!f) return undefined
+    fs.appendFileSync(f.file, JSON.stringify({ type: 'custom-title', customTitle: title, sessionId: id }) + '\n')
+    this.runs.get(id)?.rename(title)
+    return title
   }
 
   // Sesi yang sedang bekerja atau terbuka di terminal dilewati; sesi yang hanya menganggur ditutup dulu

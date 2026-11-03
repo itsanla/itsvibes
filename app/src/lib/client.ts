@@ -389,6 +389,9 @@ class Client {
       case 'tokens':
         this.tokens.set(m.sessionId, m.total)
         break
+      case 'renamed':
+        this.sessions = this.sessions.map(x => (x.id === m.sessionId ? { ...x, title: m.title } : x))
+        break
       case 'sessionsDeleted': {
         const gone = new Set(m.deleted)
         this.sessions = this.sessions.filter(x => !gone.has(x.id))
@@ -568,6 +571,10 @@ class Client {
 
   deleteSessions(ids: string[]) {
     if (!this.raw({ t: 'deleteSessions', ids })) this.showToast('Belum tersambung ke Bima')
+  }
+
+  rename(sessionId: string, title: string) {
+    if (!this.raw({ t: 'rename', sessionId, title })) this.showToast('Belum tersambung ke Bima')
   }
 
   setCompactWindow(tokens: number) {

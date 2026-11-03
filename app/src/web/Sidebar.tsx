@@ -1,5 +1,5 @@
 import { router, usePathname } from 'expo-router'
-import { type MouseEvent, useMemo, useState } from 'react'
+import { type MouseEvent, useMemo, useRef, useState } from 'react'
 import type { SessionSummary } from '../../../shared/protocol'
 import { useClient } from '../lib/client'
 import { shortPath, timeAgo } from '../lib/format'
@@ -48,6 +48,15 @@ export default function Sidebar() {
   const [drag, setDrag] = useState(false)
   const [picked, setPicked] = useState<Set<string> | null>(null) // null = bukan mode pilih
   const [confirm, setConfirm] = useState(false)
+  const [editing, setEditing] = useState<string | null>(null) // id sesi yang namanya sedang diubah
+  const [draft, setDraft] = useState('')
+  const cancelled = useRef(false)
+  const commitRename = (id: string, old: string) => {
+    const t = draft.trim()
+    setEditing(null)
+    if (!cancelled.current && t && t !== old) c.rename(id, t)
+    cancelled.current = false
+  }
 
   const groups = useMemo(() => {
     const needle = q.trim().toLowerCase()
@@ -129,10 +138,35 @@ export default function Sidebar() {
                 disabled={!!picked && locked(s)}
                 style={picked && locked(s) ? { opacity: 0.45 } : undefined}
                 onClick={() => (picked ? toggle(s.id) : router.push(`/session/${s.id}`))}
+                onDoubleClick={() => {
+                  if (picked) return
+                  setDraft(s.title)
+                  setEditing(s.id)
+                }}
               >
                 {picked ? <span className={`iv-check${picked.has(s.id) ? ' on' : ''}`}>{picked.has(s.id) ? <I n="check" s={13} w={3} c="#1a1a1a" /> : null}</span> : null}
                 <div className="iv-item-main">
-                  <div className="iv-item-title">{s.title}</div>
+                  {editing === s.id ? (
+                    <input
+                      className="iv-item-edit"
+                      autoFocus
+                      value={draft}
+                      maxLength={120}
+                      onChange={e => setDraft(e.target.value)}
+                      onClick={e => e.stopPropagation()}
+                      onDoubleClick={e => e.stopPropagation()}
+                      onFocus={e => e.currentTarget.select()}
+                      onBlur={() => commitRename(s.id, s.title)}
+                      onKeyDown={e => {
+                        e.stopPropagation()
+                        if (e.key === 'Enter') commitRename(s.id, s.title)
+                        else if (e.key === 'Escape') {
+                          cancelled.current = true
+                          setEditing(null)
+                        }
+                      }}
+                    />
+                  ) : <div className="iv-item-title" title="Klik dua kali untuk ganti nama">{s.title}</div>}
                   <div className="iv-item-sub">{shortPath(s.cwd) || s.project} · {timeAgo(s.mtime)}{s.automated ? ' · otomatis' : ''}</div>
                 </div>
                 {s.pending > 0 ? <span className="iv-badge">{s.pending}</span>

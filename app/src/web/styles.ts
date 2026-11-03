@@ -47,6 +47,7 @@ input, textarea { font: inherit; color: inherit; }
 .iv-item:hover { background: var(--hover); }
 .iv-item.active { background: var(--panel2); }
 .iv-item-main { flex: 1; min-width: 0; }
+.iv-item-edit { width: 100%; font: inherit; font-weight: 600; color: var(--text); background: var(--bg); border: 1px solid var(--accent); border-radius: 6px; padding: 1px 6px; outline: none; }
 .iv-item-title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .iv-item-sub { font-size: 12px; color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .iv-badge { min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: var(--warn); color: #1a1a1a; font-size: 11px; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; }

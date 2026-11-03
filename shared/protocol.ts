@@ -107,6 +107,7 @@ export type ClientMessage =
   | { t: 'usage'; sessionId?: string; source?: SourceId } // source: kuota sumber itu saja (lihat tanpa berpindah)
   | { t: 'setSource'; source: SourceId; sessionId?: string }
   | { t: 'deleteSessions'; ids: string[] }
+  | { t: 'rename'; sessionId: string; title: string }
   | { t: 'setCompactWindow'; tokens: number }
   | { t: 'answer'; answer: Answer }
   | { t: 'interrupt'; sessionId: string }
@@ -125,6 +126,7 @@ export type ServerMessage =
   | { t: 'models'; models: ModelOption[] }
   | { t: 'usage'; sessionId?: string; source?: SourceId; context: ContextInfo | null; plan: PlanInfo | null }
   | { t: 'settings'; settings: AiSettings }
+  | { t: 'renamed'; sessionId: string; title: string }
   | { t: 'sessionsDeleted'; deleted: string[]; skipped: { id: string; reason: string }[] }
   | { t: 'plan'; plan: PlanInfo | null } // kuota sumber aktif, disiarkan berkala
   | { t: 'tokens'; sessionId: string; total: number } // token konteks sesi, diperbarui selama Claude menjawab
